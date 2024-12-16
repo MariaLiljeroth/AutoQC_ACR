@@ -17,6 +17,7 @@ import os
 import sys
 import traceback
 import numpy as np
+import cv2
 
 import scipy
 import skimage.morphology
@@ -35,7 +36,7 @@ class ACRSliceThickness(HazenTask):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Initialise ACR object
-        self.ACR_obj = ACRObject(self.dcm_list,kwargs)
+        self.ACR_obj = ACRObject(self.dcm_list, kwargs)
 
     def run(self) -> dict:
         """Main function for performing slice width measurement
@@ -55,9 +56,7 @@ class ACRSliceThickness(HazenTask):
             result = self.get_slice_thickness(slice_thickness_dcm)
             results["measurement"] = {"slice width mm": round(result, 2)}
         except Exception as e:
-            print(
-                f"Could not calculate the slice thickness for {self.img_desc(slice_thickness_dcm)} because of : {e}"
-            )
+            print(f"Could not calculate the slice thickness for {self.img_desc(slice_thickness_dcm)} because of : {e}")
             traceback.print_exc(file=sys.stdout)
             raise Exception(e)
 
@@ -79,7 +78,7 @@ class ACRSliceThickness(HazenTask):
             tuple: x and y coordinates of ramp
         """
         # X
-        investigate_region = int(np.ceil(5.5 / res[1]).item()) # 5.5 slice thickness / pixel size = number of lines
+        investigate_region = int(np.ceil(5.5 / res[1]).item())  # 5.5 slice thickness / pixel size = number of lines
 
         if np.mod(investigate_region, 2) == 0:
             investigate_region = investigate_region + 1
@@ -87,7 +86,10 @@ class ACRSliceThickness(HazenTask):
         # Line profiles around the central row
         invest_x = [
             skimage.measure.profile_line(
-                img, (centre[1] + k, 1), (centre[1] + k, img.shape[1]), mode="constant" # Create 13 horizontal line profiles across the centre pixel
+                img,
+                (centre[1] + k, 1),
+                (centre[1] + k, img.shape[1]),
+                mode="constant",  # Create 13 horizontal line profiles across the centre pixel
             )
             for k in range(investigate_region)
         ]
@@ -95,7 +97,9 @@ class ACRSliceThickness(HazenTask):
         invest_x = np.array(invest_x).T
         mean_x_profile = np.mean(invest_x, 1)
 
-        abs_diff_x_profile = np.absolute(np.diff(mean_x_profile)) #np.diff finds edges basically-sudden changes. takes the difference between each pixel of an array
+        abs_diff_x_profile = np.absolute(
+            np.diff(mean_x_profile)
+        )  # np.diff finds edges basically-sudden changes. takes the difference between each pixel of an array
 
         # find the points corresponding to the transition between:
         # [0] - background and the hyperintense phantom
@@ -109,16 +113,21 @@ class ACRSliceThickness(HazenTask):
         width_pts = [x_locs[1], x_locs[2]]
         width = np.max(width_pts) - np.min(width_pts)
         # take rough estimate of x points for later line profiles
-        x = np.round([np.min(width_pts) + 0.1 * width, np.max(width_pts) - 0.1 * width]) #Had to reduce this, sometimes 0.2 is to narrow. 
-        #x = [round(50/res[1]),round(200/res[1])]
+        x = np.round(
+            [np.min(width_pts) + 0.1 * width, np.max(width_pts) - 0.1 * width]
+        )  # Had to reduce this, sometimes 0.2 is to narrow.
+        # x = [round(50/res[1]),round(200/res[1])]
 
-        #In some instances there can be a bubble or something that messes up the detection. If this happens nad we end up ith a wrong width then revert to a hardcoded region
-        ExpectedWidth = [190*0.8,190*1.2]
-        if self.ACR_obj.MediumACRPhantom==True:
-            ExpectedWidth=[165*0.8,165*1.2]
+        # In some instances there can be a bubble or something that messes up the detection. If this happens nad we end up ith a wrong width then revert to a hardcoded region
+        ExpectedWidth = [190 * 0.8, 190 * 1.2]
+        if self.ACR_obj.MediumACRPhantom == True:
+            ExpectedWidth = [165 * 0.8, 165 * 1.2]
             print("this is happening")
-        if width*res[0] <= ExpectedWidth[0] or width*res[0] >= ExpectedWidth[1]:
-            x = [round(50/res[1]),round(200/res[1])] # This value was hardcoded and tested but should maybe rethink it at some stage.
+        if width * res[0] <= ExpectedWidth[0] or width * res[0] >= ExpectedWidth[1]:
+            x = [
+                round(50 / res[1]),
+                round(200 / res[1]),
+            ]  # This value was hardcoded and tested but should maybe rethink it at some stage.
 
         # Y
         c = skimage.measure.profile_line(
@@ -138,6 +147,76 @@ class ACRSliceThickness(HazenTask):
 
         return x, y
 
+    def offset_point(p1, p2, factor):
+        """Offsets a given point p1, by the vector between
+        points p2 and p1 divided by the factor parameter.
+
+        Args:
+            p1 (list): Point 1, [x, y]
+            p2 (list): Point 2, [x, y]
+            factor (int): Scaling factor for the vector offset.
+
+        Returns:
+            point (list): Point 1 after offset.
+        """
+        vector = [p2[0] - p1[0], p2[1] - p1[1]]
+        offset_vector = [x / factor for x in vector]
+        point = p1 + offset_vector
+
+        return point
+
+    def position_lines(self, img):
+        """Position profile lines on the image.
+        Works for a rotated phantom.
+
+        Args:
+            img (np.ndarray): Pixel array from DICOM image.
+
+        Returns:
+            lines (list): A list of the two profile lines,
+                          each of the form [startPoint, endPoint]
+        """
+        # Applying canny edge to uint8 representation of imgage and dilating.
+        img_uint8 = np.uint8(cv2.normalize(img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
+        img_uint8 = cv2.GaussianBlur(img_uint8, ksize=(15, 15), sigmaX=0, sigmaY=0)
+        canny = cv2.dilate(
+            cv2.Canny(img_uint8, threshold1=25, threshold2=50), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+        )
+
+        # Find Contours. Sort by horizontal span and select second in list (which will be central insert)
+        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
+        contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
+        rectCont = np.intp(cv2.boxPoints(cv2.minAreaRect(contours[1])))
+
+        # Offset points by 1/3 of distance to nearest point, towards that point
+        testPoint = rectCont[0]
+        _, closest, middle, furthest = sorted(rectCont, key=lambda x: np.linalg.norm(testPoint - x))
+        offset_points = [
+            self.offset_point(testPoint, closest, 3),
+            self.offset_point(closest, testPoint, 3),
+            self.offset_point(middle, furthest, 3),
+            self.offset_point(furthest, middle, 3),
+        ]
+
+        # Offset points by 1/8 of distance to line pair point, towards that point
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda x: np.linalg.norm(testPoint - x))
+        offset_points = [
+            self.offset_point(testPoint, middle, 8),
+            self.offset_point(middle, testPoint, 8),
+            self.offset_point(closest, furthest, 8),
+            self.offset_point(furthest, closest, 8),
+        ]
+
+        # Determine which points to join to form the lines.
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda x: np.linalg.norm(testPoint - x))
+
+        line1, line2 = [testPoint, middle], [closest, furthest]
+        lines = [line1, line2]
+
+        return lines
+
     def FWHM(self, data):
         """Calculate full width at half maximum
 
@@ -152,9 +231,7 @@ class ACRSliceThickness(HazenTask):
         half_max = np.max(data) * 0.5
 
         # Naive attempt
-        half_max_crossing_indices = np.argwhere(
-            np.diff(np.sign(data - half_max))
-        ).flatten()
+        half_max_crossing_indices = np.argwhere(np.diff(np.sign(data - half_max))).flatten()
 
         # Interpolation
         def simple_interp(x_start, ydata):
@@ -178,9 +255,7 @@ class ACRSliceThickness(HazenTask):
 
             return x_true
 
-        FWHM_pts = simple_interp(half_max_crossing_indices[0], data), simple_interp(
-            half_max_crossing_indices[-1], data
-        )
+        FWHM_pts = simple_interp(half_max_crossing_indices[0], data), simple_interp(half_max_crossing_indices[-1], data)
 
         return FWHM_pts
 
@@ -195,22 +270,21 @@ class ACRSliceThickness(HazenTask):
         """
         img = dcm.pixel_array
 
-        if 'PixelSpacing' in dcm:
+        if "PixelSpacing" in dcm:
             res = dcm.PixelSpacing  # In-plane resolution from metadata
         else:
             import hazenlib.utils
-            res = hazenlib.utils.GetDicomTag(dcm,(0x28,0x30))
-            
+
+            res = hazenlib.utils.GetDicomTag(dcm, (0x28, 0x30))
+
         cxy = self.ACR_obj.centre
         x_pts, y_pts = self.find_ramps(img, cxy, res)
 
         interp_factor = 5
         sample = np.arange(1, x_pts[1] - x_pts[0] + 2)
-        new_sample = np.arange(
-            1, x_pts[1] - x_pts[0] + (1 / interp_factor), (1 / interp_factor)
-        )
+        new_sample = np.arange(1, x_pts[1] - x_pts[0] + (1 / interp_factor), (1 / interp_factor))
         offsets = np.arange(-3, 4)
-        offsets = np.arange(start=-1,stop=4,step=1)
+        offsets = np.arange(start=-1, stop=4, step=1)
         ramp_length = np.zeros((2, 7))
 
         line_store = []
@@ -233,9 +307,7 @@ class ACRSliceThickness(HazenTask):
                 ).flatten(),
             ]
 
-            interp_lines = [
-                scipy.interpolate.interp1d(sample, line)(new_sample) for line in lines
-            ]
+            interp_lines = [scipy.interpolate.interp1d(sample, line)(new_sample) for line in lines]
             fwhm = [self.FWHM(interp_line) for interp_line in interp_lines]
             ramp_length[0, i] = (1 / interp_factor) * np.diff(fwhm[0]) * res[0]
             ramp_length[1, i] = (1 / interp_factor) * np.diff(fwhm[1]) * res[0]
@@ -245,14 +317,15 @@ class ACRSliceThickness(HazenTask):
 
         with np.errstate(divide="ignore", invalid="ignore"):
             dz = 0.2 * (np.prod(ramp_length, axis=0)) / np.sum(ramp_length, axis=0)
-        
+
         dz = dz[~np.isnan(dz)]
 
-        if 'SliceThickness' in dcm:
+        if "SliceThickness" in dcm:
             Slice_Thick = dcm.SliceThickness  # In-plane resolution from metadata
         else:
             import hazenlib.utils
-            Slice_Thick = hazenlib.utils.GetDicomTag(dcm,(0x18,0x50))
+
+            Slice_Thick = hazenlib.utils.GetDicomTag(dcm, (0x18, 0x50))
 
         z_ind = np.argmin(np.abs(Slice_Thick - dz))
 
@@ -277,12 +350,8 @@ class ACRSliceThickness(HazenTask):
             axes[0].set_title("Centroid Location")
 
             axes[1].imshow(img)
-            axes[1].plot(
-                [x_pts[0], x_pts[1]], offsets[z_ind] + [y_pts[0], y_pts[0]], "b-"
-            )
-            axes[1].plot(
-                [x_pts[0], x_pts[1]], offsets[z_ind] + [y_pts[1], y_pts[1]], "r-"
-            )
+            axes[1].plot([x_pts[0], x_pts[1]], offsets[z_ind] + [y_pts[0], y_pts[0]], "b-")
+            axes[1].plot([x_pts[0], x_pts[1]], offsets[z_ind] + [y_pts[1], y_pts[1]], "r-")
             axes[1].axis("off")
             axes[1].set_title("Line Profiles")
 
@@ -295,12 +364,8 @@ class ACRSliceThickness(HazenTask):
                 "r",
                 label=f"FWHM={np.round(ramp_length[1][z_ind], 2)}mm",
             )
-            axes[2].axhline(
-                0.5 * y_extent, linestyle="dashdot", color="k", xmin=xmin, xmax=xmax
-            )
-            axes[2].axvline(
-                max_loc, linestyle="dashdot", color="k", ymin=0, ymax=10 / 11
-            )
+            axes[2].axhline(0.5 * y_extent, linestyle="dashdot", color="k", xmin=xmin, xmax=xmax)
+            axes[2].axvline(max_loc, linestyle="dashdot", color="k", ymin=0, ymax=10 / 11)
 
             axes[2].set_xlabel("Relative Position (mm)")
             axes[2].set_xlim([0, x_extent])
@@ -323,12 +388,8 @@ class ACRSliceThickness(HazenTask):
                 "b",
                 label=f"FWHM={np.round(ramp_length[0][z_ind], 2)}mm",
             )
-            axes[3].axhline(
-                0.5 * y_extent, xmin=xmin, xmax=xmax, linestyle="dashdot", color="k"
-            )
-            axes[3].axvline(
-                max_loc, ymin=0, ymax=10 / 11, linestyle="dashdot", color="k"
-            )
+            axes[3].axhline(0.5 * y_extent, xmin=xmin, xmax=xmax, linestyle="dashdot", color="k")
+            axes[3].axvline(max_loc, ymin=0, ymax=10 / 11, linestyle="dashdot", color="k")
 
             axes[3].set_xlabel("Relative Position (mm)")
             axes[3].set_xlim([0, x_extent])
@@ -337,11 +398,7 @@ class ACRSliceThickness(HazenTask):
             axes[3].grid()
             axes[3].legend(loc="best")
 
-            img_path = os.path.realpath(
-                os.path.join(
-                    self.report_path, f"{self.img_desc(dcm)}_slice_thickness.png"
-                )
-            )
+            img_path = os.path.realpath(os.path.join(self.report_path, f"{self.img_desc(dcm)}_slice_thickness.png"))
             fig.savefig(img_path)
             self.report_files.append(img_path)
 
