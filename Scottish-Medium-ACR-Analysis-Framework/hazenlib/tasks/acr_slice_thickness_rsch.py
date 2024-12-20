@@ -59,20 +59,20 @@ class Main:
         testPoint = rectPoints[0]
         _, closest, middle, furthest = sorted(rectPoints, key=lambda otherPoint: (testPoint - otherPoint).mag)
         offset_points = [
-            testPoint.copy().offset(closest, sf=1 / 3),
-            closest.copy().offset(testPoint, sf=1 / 3),
-            middle.copy().offset(furthest, sf=1 / 3),
-            furthest.copy().offset(middle, sf=1 / 3),
+            testPoint.get_offset(closest, sf=1 / 3),
+            closest.get_offset(testPoint, sf=1 / 3),
+            middle.get_offset(furthest, sf=1 / 3),
+            furthest.get_offset(middle, sf=1 / 3),
         ]
 
         # Offset points by 1/8 of distance to line pair point, towards that point
         testPoint = offset_points[0]
         _, closest, middle, furthest = sorted(offset_points, key=lambda otherPoint: (testPoint - otherPoint).mag)
         offset_points = [
-            testPoint.copy().offset(middle, sf=1 / 50),
-            middle.copy().offset(testPoint, sf=1 / 50),
-            closest.copy().offset(furthest, sf=1 / 50),
-            furthest.copy().offset(closest, sf=1 / 50),
+            testPoint.get_offset(middle, sf=1 / 50),
+            middle.get_offset(testPoint, sf=1 / 50),
+            closest.get_offset(furthest, sf=1 / 50),
+            furthest.get_offset(closest, sf=1 / 50),
         ]
 
         # Determine which points to join to form the lines.
@@ -141,7 +141,7 @@ class Point:
 
     @property
     def mag(self):
-        """Setter for mag attribute"""
+        """Getter for mag attribute"""
         return np.sqrt(self.x**2 + self.y**2)
 
     def scale(self, f):
@@ -152,7 +152,7 @@ class Point:
         """Returns a copy of the current object"""
         return Point(self._xy)
 
-    def offset(self, targetPoint, sf):
+    def get_offset(self, targetPoint, sf):
         """Shifts xy towards the target point by vector between them scaled by factor sf"""
         vector = targetPoint - self
         vector.scale(sf)
