@@ -9,86 +9,6 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 
 
-class Main:
-    def run(self):
-        self.img = self.extract_image()
-        self.lines = self.find_lines()
-
-        for line in self.lines:
-            line.analyse_profile(self.img)
-            line.plot_profiles()
-            plt.show()
-
-        for line in self.lines:
-            line.plot_line()
-        plt.imshow(self.img)
-        plt.show()
-
-        self.report()
-
-    def extract_image(self):
-        dcmPath = filedialog.askopenfilename(title="Please select report.")
-        ds = pydicom.dcmread(dcmPath)
-        img = ds.pixel_array
-
-        return img
-
-    def find_lines(self):
-        """Finds the start and end coordinates of the profile lines
-
-        Args:
-            img (np.ndarray): Pixel array from DICOM image.
-
-        Returns:
-            lines (list of Line): list of line objects representing the placed lines on the image.
-        """
-        # Applying canny edge to uint8 representation of imgage and dilating.
-        img_uint8 = np.uint8(cv2.normalize(self.img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
-        img_uint8 = cv2.GaussianBlur(img_uint8, ksize=(15, 15), sigmaX=0, sigmaY=0)
-        canny = cv2.dilate(
-            cv2.Canny(img_uint8, threshold1=25, threshold2=50), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-        )
-
-        # Find Contours. Sort by horizontal span and select second in list (which will be central insert)
-        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
-        contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
-        rectCont = np.intp(cv2.boxPoints(cv2.minAreaRect(contours[1])))
-        rectPoints = [Point(x) for x in rectCont]
-
-        # Offset points by 1/3 of distance to nearest point, towards that point
-        testPoint = rectPoints[0]
-        _, closest, middle, furthest = sorted(rectPoints, key=lambda otherPoint: (testPoint - otherPoint).mag)
-        offset_points = [
-            testPoint.get_offset(closest, sf=1 / 3),
-            closest.get_offset(testPoint, sf=1 / 3),
-            middle.get_offset(furthest, sf=1 / 3),
-            furthest.get_offset(middle, sf=1 / 3),
-        ]
-
-        # Offset points by 1/8 of distance to line pair point, towards that point
-        testPoint = offset_points[0]
-        _, closest, middle, furthest = sorted(offset_points, key=lambda otherPoint: (testPoint - otherPoint).mag)
-        offset_points = [
-            testPoint.get_offset(middle, sf=1 / 50),
-            middle.get_offset(testPoint, sf=1 / 50),
-            closest.get_offset(furthest, sf=1 / 50),
-            furthest.get_offset(closest, sf=1 / 50),
-        ]
-
-        # Determine which points to join to form the lines.
-        testPoint = offset_points[0]
-        _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
-
-        line1, line2 = Line(testPoint, middle), Line(closest, furthest)
-        lines = [line1, line2]
-
-        return lines
-
-    def report(self):
-        for line in self.lines:
-            print(f"FWHM: {line.FWHM} pixels")
-
-
 class Point:
     def __init__(self, x, y=None):
         if isinstance(x, (list, tuple)) and len(x) == 2:
@@ -141,7 +61,7 @@ class Point:
 
     @property
     def mag(self):
-        """Getter for mag attribute"""
+        """Setter for mag attribute"""
         return np.sqrt(self.x**2 + self.y**2)
 
     def scale(self, f):
@@ -152,7 +72,7 @@ class Point:
         """Returns a copy of the current object"""
         return Point(self._xy)
 
-    def get_offset(self, targetPoint, sf):
+    def offset(self, targetPoint, sf):
         """Shifts xy towards the target point by vector between them scaled by factor sf"""
         vector = targetPoint - self
         vector.scale(sf)
@@ -272,7 +192,7 @@ class Line:
 
     def plot_line(self):
         """Draws the line onto the image provided in args"""
-        plt.plot([self.start.x, self.end.x], [self.start.y, self.end.y], "r", lw=1)
+        plt.plot([self.start.x, self.end.x], [self.start.y, self.end.y], lw=1)
 
     def plot_profiles(self):
         plt.plot(self._profile)
@@ -280,6 +200,86 @@ class Line:
 
     def __str__(self):
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
+
+
+class Main:
+    def run(self):
+        self.img = self.extract_image()
+        self.lines = self.find_lines()
+
+        for line in self.lines:
+            line.analyse_profile(self.img)
+            line.plot_profiles()
+            plt.show()
+
+        for line in self.lines:
+            line.plot_line()
+        plt.imshow(self.img)
+        plt.show()
+
+        self.report()
+
+    def extract_image(self):
+        dcmPath = filedialog.askopenfilename(title="Please select report.")
+        ds = pydicom.dcmread(dcmPath)
+        img = ds.pixel_array
+
+        return img
+
+    def find_lines(self):
+        """Finds the start and end coordinates of the profile lines
+
+        Args:
+            img (np.ndarray): Pixel array from DICOM image.
+
+        Returns:
+            lines (list of Line): list of line objects representing the placed lines on the image.
+        """
+        # Applying canny edge to uint8 representation of imgage and dilating.
+        img_uint8 = np.uint8(cv2.normalize(self.img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
+        img_uint8 = cv2.GaussianBlur(img_uint8, ksize=(15, 15), sigmaX=0, sigmaY=0)
+        canny = cv2.dilate(
+            cv2.Canny(img_uint8, threshold1=25, threshold2=50), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+        )
+
+        # Find Contours. Sort by horizontal span and select second in list (which will be central insert)
+        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
+        contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
+        rectCont = np.intp(cv2.boxPoints(cv2.minAreaRect(contours[1])))
+        rectPoints = [Point(x) for x in rectCont]
+
+        # Offset points by 1/3 of distance to nearest point, towards that point
+        testPoint = rectPoints[0]
+        _, closest, middle, furthest = sorted(rectPoints, key=lambda otherPoint: (testPoint - otherPoint).mag)
+        offset_points = [
+            testPoint.copy().offset(closest, sf=1 / 3),
+            closest.copy().offset(testPoint, sf=1 / 3),
+            middle.copy().offset(furthest, sf=1 / 3),
+            furthest.copy().offset(middle, sf=1 / 3),
+        ]
+
+        # Offset points by 1/8 of distance to line pair point, towards that point
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda otherPoint: (testPoint - otherPoint).mag)
+        offset_points = [
+            testPoint.copy().offset(middle, sf=1 / 50),
+            middle.copy().offset(testPoint, sf=1 / 50),
+            closest.copy().offset(furthest, sf=1 / 50),
+            furthest.copy().offset(closest, sf=1 / 50),
+        ]
+
+        # Determine which points to join to form the lines.
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
+
+        line1, line2 = Line(testPoint, middle), Line(closest, furthest)
+        lines = [line1, line2]
+
+        return lines
+
+    def report(self):
+        for line in self.lines:
+            print(f"FWHM: {line.FWHM} pixels")
 
 
 main = Main()
