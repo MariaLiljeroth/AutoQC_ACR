@@ -1,5 +1,5 @@
 import pydicom
-from tkinter import filedialog
+from tkinter import filedialog, Tk
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -7,7 +7,6 @@ import cv2
 from skimage.measure import profile_line
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
-
 
 class Point:
     def __init__(self, x, y=None):
@@ -23,41 +22,15 @@ class Point:
         """Getter for xy attribute"""
         return self._xy
 
-    @xy.setter
-    def xy(self, value):
-        """Setter for xy attribute"""
-        if isinstance(value, (list, tuple)) and len(value) == 2:
-            self._xy = np.array(value)
-        elif isinstance(value, np.ndarray) and value.shape == (2,):
-            self._xy = value
-        else:
-            raise TypeError("xy must be a list, tuple or numpy array of length 2.")
-
     @property
     def x(self):
         """Getter for x value"""
         return self._xy[0]
 
-    @x.setter
-    def x(self, value):
-        """Setter for x value"""
-        if isinstance(value, (int, float)):
-            self._xy[0] = value
-        else:
-            raise TypeError("x must be an integer or float.")
-
     @property
     def y(self):
         """Getter for y value"""
         return self._xy[1]
-
-    @y.setter
-    def y(self, value):
-        """Setter for y value"""
-        if isinstance(value, (int, float)):
-            self._xy[1] = value
-        else:
-            raise TypeError("x must be an integer or float.")
 
     @property
     def mag(self):
@@ -94,7 +67,8 @@ class Point:
 
 
 class Line:
-    def __init__(self, start, end):
+    def __init__(self, start, end, referenceImg=None):
+        # Initialise coordinate attributes
         if isinstance(start, Point):
             self._start = start
         else:
@@ -103,37 +77,30 @@ class Line:
             self._end = end
         else:
             raise TypeError("end must be of type Point")
+        self._length = np.sqrt((self.start.x - self.end.x) ** 2 + (self.start.y - self.end.y) ** 2)
+
+        # Initialise profile
+        profile = profile_line(
+            image=referenceImg,
+            src=self._start.xy.astype(int).tolist()[::-1],
+            dst=self._end.xy.astype(int).tolist()[::-1],
+        )
+        self._profile = gaussian_filter1d(profile, sigma=len(profile) / 50)
 
     @property
     def start(self):
         """Getter for start attribute"""
         return self._start
 
-    @start.setter
-    def start(self, value):
-        """Setter for start attribute"""
-        if isinstance(value, Point):
-            self._start = value
-        else:
-            raise TypeError("start must be of type Point")
-
     @property
     def end(self):
         """Getter for end attribute"""
         return self._end
 
-    @end.setter
-    def end(self, value):
-        """Setter for end attribute"""
-        if isinstance(value, Point):
-            self._end = value
-        else:
-            raise TypeError("end must be of type Point")
-
     @property
     def length(self):
         """Getter for length attribute"""
-        return np.sqrt((self.start.x - self.end.x) ** 2 + (self.start.y - self.end.y) ** 2)
+        return self._length
 
     @property
     def profile(self):
@@ -143,33 +110,26 @@ class Line:
     @property
     def binarizedProfile(self):
         """Getter for binarized profile attribute"""
-        return self._profileRaw
+        return self._binarizedProfile
 
     @property
     def FWHM(self):
         """Getter for FWHM attribute"""
         return self._FWHM
 
-    def scale(self, f):
-        """Scales up the start and end points by scalar f"""
-        self._start.scale(f)
-        self._end.scale(f)
-
     def analyse_profile(self, img):
         """Calculate profile based on start and end points using image provided in args"""
-        profile = profile_line(img, self.start.xy.astype(int).tolist()[::-1], self.end.xy.astype(int).tolist()[::-1])
-        profile = gaussian_filter1d(profile, sigma=len(profile) / 50)
 
-        backgroundY = self.determine_background(profile)
-        peakX, peakY = self.extract_peaks(profile)
-        lim = (peakY - np.min(profile)) / 2 + np.min(profile)
+        backgroundY = self.determine_background(self._profile)
+        peakX, peakY = self.extract_peaks(self._profile)
+        lim = (peakY - np.min(self._profile)) / 2 + np.min(self._profile)
 
-        binarizedProfile = np.where(profile >= lim, peakY, backgroundY)
+        binarizedProfile = np.where(self._profile >= lim, peakY, backgroundY)
         FWHM = binarizedProfile.tolist().count(peakY)
 
-        self._profile = profile
         self._binarizedProfile = binarizedProfile
-        self._FWHM = FWHM
+        # Correct for distance to pixel ratio.
+        self._FWHM = FWHM * self.length / len(self._profile)
 
     @staticmethod
     def determine_background(profile):
@@ -191,7 +151,7 @@ class Line:
         return peakX, peakY
 
     def plot_line(self):
-        """Draws the line onto the image provided in args"""
+        """Plots the line"""
         plt.plot([self.start.x, self.end.x], [self.start.y, self.end.y], lw=1)
 
     def plot_profiles(self):
@@ -202,7 +162,7 @@ class Line:
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
 
 
-class Main:
+class ACRSliceThickness:
     def run(self):
         self.img = self.extract_image()
         self.lines = self.find_lines()
@@ -216,11 +176,16 @@ class Main:
             line.plot_line()
         plt.imshow(self.img)
         plt.show()
+        
+        self.report_results()
 
-        self.report()
-
-    def extract_image(self):
-        dcmPath = filedialog.askopenfilename(title="Please select report.")
+    @staticmethod
+    def extract_image():
+        root = Tk()
+        root.withdraw()
+        root.call('wm', 'attributes', '.', '-topmost', True)
+        dcmPath = filedialog.askopenfilename(title="Please select a DICOM file.", parent = root)
+        root.destroy()
         ds = pydicom.dcmread(dcmPath)
         img = ds.pixel_array
 
@@ -246,7 +211,7 @@ class Main:
         contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
         contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
         rectCont = np.intp(cv2.boxPoints(cv2.minAreaRect(contours[1])))
-        rectPoints = [Point(x) for x in rectCont]
+        rectPoints = [Point(coords) for coords in rectCont]
 
         # Offset points by 1/3 of distance to nearest point, towards that point
         testPoint = rectPoints[0]
@@ -271,16 +236,14 @@ class Main:
         # Determine which points to join to form the lines.
         testPoint = offset_points[0]
         _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
-
-        line1, line2 = Line(testPoint, middle), Line(closest, furthest)
-        lines = [line1, line2]
+        lines = [Line(start=testPoint, end=middle, referenceImg=self.img), Line(start=closest, end=furthest, referenceImg=self.img)]
 
         return lines
 
-    def report(self):
+    def report_results(self):
         for line in self.lines:
-            print(f"FWHM: {line.FWHM} pixels")
+            print(f"FWHM: {line.FWHM:.1f} pixels")
 
 
-main = Main()
-main.run()
+task = ACRSliceThickness()
+task.run()
