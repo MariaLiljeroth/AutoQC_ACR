@@ -4,6 +4,7 @@ import pydicom
 import imutils
 import matplotlib
 import numpy as np
+import pathlib
 
 from collections import defaultdict
 from skimage import filters
@@ -11,7 +12,36 @@ from skimage import filters
 import hazenlib.exceptions as exc
 
 matplotlib.use("Agg")
+    
+def sortDICOMs(mainPath: str | pathlib.Path):
+    """
+    Description
+    ------
+    Groups the DICOM files within the selected directory into folders - one series per folder
+    """
+    
+    if isinstance(mainPath, str):
+        mainPath = pathlib.Path(mainPath)
+    elif isinstance(pathlib.Path):
+        pass
+    else:
+        raise TypeError("Function arg should be str or pathlib.Path")
 
+    fileList = [item for item in mainPath.rglob("*") if item.is_file()]
+
+    print("Please wait, sorting DICOMs.")
+    for file in fileList:
+        fileName = os.path.split(file)[1]
+
+        dcmData = pydicom.dcmread(file)
+        sDescrip = dcmData.SeriesDescription
+        
+        folderPath = str(mainPath) + "/" + sDescrip
+        if not os.path.exists(folderPath):
+            os.makedirs(folderPath)
+
+        os.rename(file, folderPath + "/" + fileName)
+        
 
 def GetDicomTag(dcm, tag):
     for elem in dcm.iterall():

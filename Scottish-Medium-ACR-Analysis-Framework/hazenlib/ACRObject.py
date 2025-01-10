@@ -294,6 +294,12 @@ class ACRObject:
         test_mask = self.circular_mask(
             self.centre, (80 // self.pixel_spacing[0]), image.shape
         )
+        
+        # Added by Maria for testing
+        import matplotlib.pyplot as plt # ML
+        import matplotlib
+        plt.figure(), plt.imshow(image), plt.show()# ML
+        
         test_image = image * test_mask
         test_vals = test_image[np.nonzero(test_image)]
         if np.percentile(test_vals, 80) - np.percentile(test_vals, 10) > 0.9 * np.max(
