@@ -142,7 +142,7 @@ class ACRObject:
             )
             for norm_image in normalised_images
         ]
-
+        
         if detected_circles[0] is not None:
             true_circle = detected_circles[0].flatten()
         else:
@@ -213,7 +213,7 @@ class ACRObject:
         centre  : tuple
             Tuple of ints representing the (x, y) center of the image.
         """
-        img = self.images[6]
+        img = self.images[4]
         dx, dy = self.pixel_spacing
         img_blur = cv2.GaussianBlur(img, (1, 1), 0)
         img_grad = cv2.Sobel(img_blur, 0, dx=1, dy=1)
@@ -237,7 +237,28 @@ class ACRObject:
             radius = int(detected_circles[2])
 
         else: #Tried to improve this by implementing a circle fitting algo, seems to be more relaiable needs more testing though.
-            '''
+            
+        # Attempt by NC at Hough Circles
+            """
+            k = int(min(img.shape)/25)
+            if k % 2 == 0:
+                k += 1
+            img_blur = cv2.GaussianBlur(img, (k, k), sigmaX=0)  
+            _, img_binarized = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            canny = cv2.Canny(img_binarized.astype(np.uint8), 100, 50)
+            detected_circles = cv2.HoughCircles(
+                image=canny,
+                method=cv2.HOUGH_GRADIENT,
+                dp=1.2,
+                minDist=50,
+                param1=50,
+                param2=30,
+                minRadius=int(min(img.shape)/4)
+                ).flatten()
+            centre = [int(round(i)) for i in detected_circles[:2]]
+            radius = detected_circles[2]
+            """
+            
             img_blur = cv2.medianBlur(img,5)
             img_grad = cv2.Sobel(img_blur, 0, dx=1, dy=1)
 
@@ -255,9 +276,10 @@ class ACRObject:
             centre = [int(round(i)) for i in detected_circles[:2]]
             radius = int(detected_circles[2])
             radius = int(round(detected_circles[2]))
-            '''
+            
             #The commented block below is a posible improvememnet but testing seems to suggest the above was ok
             
+            """
             values = img[img > np.mean(img)*0.1] 
             image = img > np.median(values)*0.5
             from skimage import io, color, measure, draw, img_as_bool
@@ -273,7 +295,7 @@ class ACRObject:
             detected_circles= [x0,y0,r]
             centre = [int(round(i)) for i in detected_circles[:2]] # This is better as round than just int otherwise its always rounding down.
             radius = int(round(detected_circles[2]))
-            
+            """
             
         return centre, radius
 
@@ -294,11 +316,6 @@ class ACRObject:
         test_mask = self.circular_mask(
             self.centre, (80 // self.pixel_spacing[0]), image.shape
         )
-        
-        # Added by Maria for testing
-        import matplotlib.pyplot as plt # ML
-        import matplotlib
-        plt.figure(), plt.imshow(image), plt.show()# ML
         
         test_image = image * test_mask
         test_vals = test_image[np.nonzero(test_image)]

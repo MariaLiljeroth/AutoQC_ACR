@@ -1,5 +1,9 @@
-import pydicom
-from tkinter import filedialog, Tk
+import os
+import sys
+import traceback
+
+sys.path.append(os.path.dirname(os.getcwd()))
+
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -7,6 +11,127 @@ import cv2
 from skimage.measure import profile_line
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
+
+from hazenlib.HazenTask import HazenTask
+from hazenlib.ACRObject import ACRObject
+
+
+class ACRSliceThickness(HazenTask):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ACR_obj = ACRObject(self.dcm_list, kwargs)
+
+    def run(self):
+        dcm_st = self.ACR_obj.dcm_list[0]
+
+        results = self.init_result_dict()
+        results["file"] = self.img_desc(dcm_st)
+
+        try:
+            result = self.calc_slice_thickness(dcm_st)
+            results["measurement"] = {"slice width mm": round(result, 2)}
+
+        except Exception as e:
+            print(
+                f"Could not calculate the slice thickness for {self.img_desc(dcm_st)} because of : {e}"
+            )
+            traceback.print_exc(file=sys.stdout)
+            raise Exception(e)
+
+        if self.report:
+            results["report_image"] = self.report_files
+
+        return results
+
+    def calc_slice_thickness(self, dcm_st):
+        if "PixelSpacing" in dcm_st:
+            res = dcm_st.PixelSpacing  # In-plane resolution from metadata
+        else:
+            import hazenlib.utils
+            res = hazenlib.utils.GetDicomTag(dcm_st, (0x28, 0x30))
+
+        lines, detectedInsert = self.place_lines(dcm_st.pixel_array)
+        for line in lines:
+            line.analyse_profile(dcm_st.pixel_array)
+        slice_thickness = round(
+            0.2 * np.mean(res) * (lines[0].FWHM * lines[1].FWHM) / (lines[0].FWHM + lines[1].FWHM), 1
+        )
+
+        if self.report:
+            fig, axes = plt.subplots(1, 2, figsize=(16,8))
+            plt.tight_layout()
+            
+            axes[0].set_title("Line profile placement.")
+            axes[1].set_title("Line profile placement")
+            axes[0].imshow(dcm_st.pixel_array)
+            axes[0].plot([j.x for j in detectedInsert] + [detectedInsert[0].x], [j.y for j in detectedInsert] + [detectedInsert[0].y])
+            
+            colors = ["g", "r"]
+            for col, line in zip(colors, lines):
+                axes[0].plot([line.start.x, line.end.x], [line.start.y, line.end.y], lw=2, color=col)
+                axes[1].plot(line.profile * np.mean(res), color=col)
+                axes[1].plot(line.binarizedProfile * np.mean(res), ls="--", color=col)
+            plt.show()
+            
+            
+            img_path = os.path.realpath(os.path.join(self.report_path, f"{self.img_desc(dcm_st)}_slice_thickness.png"))
+            fig.savefig(img_path)
+            self.report_files.append(img_path)
+
+        return slice_thickness
+
+
+    @staticmethod
+    def place_lines(img):
+        """Finds the start and end coordinates of the profile lines
+
+        Args:
+            img (np.ndarray): Pixel array from DICOM image.
+
+        Returns:
+            lines (list of Line): list of line objects representing the placed lines on the image.
+        """
+        
+        # Enhance contrast, otsu threshold and binarize
+        clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
+        img_contrastEnhanced = clahe.apply(img)
+        _ , img_binary = cv2.threshold(img_contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Find contour of insert
+        # Hough transform seems to be a potential improvement?
+        contours, _ = cv2.findContours(img_binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
+        contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
+        insertContour = contours[1]
+        insertContour = np.intp(cv2.boxPoints(cv2.minAreaRect(insertContour)))
+        insertCorners = [Point(coords) for coords in insertContour]
+
+        # Offset points by 1/3 of distance to nearest point, towards that point
+        testPoint = insertCorners[0]
+        _, closest, middle, furthest = sorted(insertCorners, key=lambda otherPoint: (testPoint - otherPoint).mag)
+        offset_points = [
+            testPoint.copy().offset(closest, sf=1 / 3),
+            closest.copy().offset(testPoint, sf=1 / 3),
+            middle.copy().offset(furthest, sf=1 / 3),
+            furthest.copy().offset(middle, sf=1 / 3),
+        ]
+
+        # Offset points by 1/8 of distance to line pair point, towards that point
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda otherPoint: (testPoint - otherPoint).mag)
+        offset_points = [
+            testPoint.copy().offset(middle, sf=1 / 50),
+            middle.copy().offset(testPoint, sf=1 / 50),
+            closest.copy().offset(furthest, sf=1 / 50),
+            furthest.copy().offset(closest, sf=1 / 50),
+        ]
+
+        # Determine which points to join to form the lines.
+        testPoint = offset_points[0]
+        _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
+        lines = [ProfileLine(start=testPoint, end=middle, referenceImg=img), ProfileLine(start=closest, end=furthest, referenceImg=img)]
+
+        return lines, insertCorners
+
 
 class Point:
     def __init__(self, x, y=None):
@@ -66,7 +191,7 @@ class Point:
         return f"Point({self.x}, {self.y})"
 
 
-class Line:
+class ProfileLine:
     def __init__(self, start, end, referenceImg=None):
         # Initialise coordinate attributes
         if isinstance(start, Point):
@@ -133,7 +258,9 @@ class Line:
 
     @staticmethod
     def determine_background(profile):
-        approxBackground = profile[profile < np.min(profile) + 0.05 * abs(np.max(profile) - np.min(profile))]
+        approxBackground = profile[
+            profile < np.min(profile) + 0.05 * abs(np.max(profile) - np.min(profile))
+        ]
         background = np.mean(approxBackground)
         return background
 
@@ -150,100 +277,5 @@ class Line:
             raise ValueError("No peaks detected!")
         return peakX, peakY
 
-    def plot_line(self):
-        """Plots the line"""
-        plt.plot([self.start.x, self.end.x], [self.start.y, self.end.y], lw=1)
-
-    def plot_profiles(self):
-        plt.plot(self._profile)
-        plt.plot(self._binarizedProfile, ls="--")
-
     def __str__(self):
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
-
-
-class ACRSliceThickness:
-    def run(self):
-        self.img = self.extract_image()
-        self.lines = self.find_lines()
-
-        for line in self.lines:
-            line.analyse_profile(self.img)
-            line.plot_profiles()
-            plt.show()
-
-        for line in self.lines:
-            line.plot_line()
-        plt.imshow(self.img)
-        plt.show()
-        
-        self.report_results()
-
-    @staticmethod
-    def extract_image():
-        root = Tk()
-        root.withdraw()
-        root.call('wm', 'attributes', '.', '-topmost', True)
-        dcmPath = filedialog.askopenfilename(title="Please select a DICOM file.", parent = root)
-        root.destroy()
-        ds = pydicom.dcmread(dcmPath)
-        img = ds.pixel_array
-
-        return img
-
-    def find_lines(self):
-        """Finds the start and end coordinates of the profile lines
-
-        Args:
-            img (np.ndarray): Pixel array from DICOM image.
-
-        Returns:
-            lines (list of Line): list of line objects representing the placed lines on the image.
-        """
-        # Applying canny edge to uint8 representation of imgage and dilating.
-        img_uint8 = np.uint8(cv2.normalize(self.img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
-        img_uint8 = cv2.GaussianBlur(img_uint8, ksize=(15, 15), sigmaX=0, sigmaY=0)
-        canny = cv2.dilate(
-            cv2.Canny(img_uint8, threshold1=25, threshold2=50), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-        )
-
-        # Find Contours. Sort by horizontal span and select second in list (which will be central insert)
-        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
-        contours = sorted(contours, key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])), reverse=True)
-        rectCont = np.intp(cv2.boxPoints(cv2.minAreaRect(contours[1])))
-        rectPoints = [Point(coords) for coords in rectCont]
-
-        # Offset points by 1/3 of distance to nearest point, towards that point
-        testPoint = rectPoints[0]
-        _, closest, middle, furthest = sorted(rectPoints, key=lambda otherPoint: (testPoint - otherPoint).mag)
-        offset_points = [
-            testPoint.copy().offset(closest, sf=1 / 3),
-            closest.copy().offset(testPoint, sf=1 / 3),
-            middle.copy().offset(furthest, sf=1 / 3),
-            furthest.copy().offset(middle, sf=1 / 3),
-        ]
-
-        # Offset points by 1/8 of distance to line pair point, towards that point
-        testPoint = offset_points[0]
-        _, closest, middle, furthest = sorted(offset_points, key=lambda otherPoint: (testPoint - otherPoint).mag)
-        offset_points = [
-            testPoint.copy().offset(middle, sf=1 / 50),
-            middle.copy().offset(testPoint, sf=1 / 50),
-            closest.copy().offset(furthest, sf=1 / 50),
-            furthest.copy().offset(closest, sf=1 / 50),
-        ]
-
-        # Determine which points to join to form the lines.
-        testPoint = offset_points[0]
-        _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
-        lines = [Line(start=testPoint, end=middle, referenceImg=self.img), Line(start=closest, end=furthest, referenceImg=self.img)]
-
-        return lines
-
-    def report_results(self):
-        for line in self.lines:
-            print(f"FWHM: {line.FWHM:.1f} pixels")
-
-
-task = ACRSliceThickness()
-task.run()

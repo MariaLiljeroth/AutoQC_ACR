@@ -10,12 +10,10 @@ sys.path.append(os.path.dirname(os.getcwd()))
 import matplotlib.pyplot as plt
 import matplotlib
 
-matplotlib.use("TkAgg")
-
-from tkinter.filedialog import askdirectory
+from tkinter import Tk, filedialog
 
 from hazenlib.utils import get_dicom_files, sortDICOMs
-from hazenlib.tasks.acr_slice_thickness import ACRSliceThickness
+from hazenlib.tasks.acr_slice_thickness_rsch import ACRSliceThickness
 from hazenlib.tasks.acr_snr import ACRSNR
 
 
@@ -32,8 +30,10 @@ class TopLevel:
 
     def create_IO(self) -> tuple[str, str, list[str], str]:
         # Select I/O folders
-        mainPath = askdirectory(title="Choose top level input data folder")
-        resultsPath = askdirectory(title="Choose output data folder")
+        root = Tk()
+        mainPath = filedialog.askdirectory(parent=root, title="Choose top level input data folder")
+        resultsPath = filedialog.askdirectory(parent=root, title="Choose output data folder")
+        root.destroy()
 
         # Find folders in mainPath and sort Input folder using DICOM sorter.
         foldersInMainPath = [
@@ -56,6 +56,8 @@ class TopLevel:
         return mainPath, resultsPath, foldersInMainPath, reportDirPath
 
     def run_tasks_on_folder(self, folder: str):
+        
+        """
         acr_snr_task = ACRSNR(
             input_data=get_dicom_files(self.mainPath + "/" + folder),
             report_dir=self.reportDirPath,
@@ -63,13 +65,16 @@ class TopLevel:
             MediumACRPhantom=True,
         )
         acr_snr_task.run()
+        """
 
-        # snr_dcm = acr_snr_task.ACR_obj.dcms[
-        #    4
-        # ]  # acr_snr_task.ACR_obj.slice7_dcm
-        # snr = acr_snr_task.snr_by_smoothing(snr_dcm)
-        # print(snr)
-
+        stTask = ACRSliceThickness(
+            input_data=get_dicom_files(os.path.join(self.mainPath, folder)),
+            report_dir=self.reportDirPath,
+            report=True,
+            MediumACRPhantom=True
+        )
+        results = stTask.run()
+        print(results)
 
 toplevel = TopLevel()
 toplevel.run()

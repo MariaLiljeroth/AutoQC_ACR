@@ -59,7 +59,7 @@ class ACRSNR(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Identify relevant slice
-        snr_dcm = self.ACR_obj.slice7_dcm
+        snr_dcm = self.ACR_obj.dcm_list[4]
         # Initialise results dictionary
         results = self.init_result_dict()
 
