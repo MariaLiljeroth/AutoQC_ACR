@@ -7,9 +7,6 @@ sys.path.insert(
 )
 sys.path.append(os.path.dirname(os.getcwd()))
 
-import matplotlib.pyplot as plt
-import matplotlib
-
 from tkinter import Tk, filedialog
 
 from hazenlib.utils import get_dicom_files, sortDICOMs
@@ -23,12 +20,13 @@ class TopLevel:
             self.mainPath,
             self.resultsPath,
             self.foldersInMainPath,
-            self.reportDirPath,
+            self.outputFolders,
         ) = self.create_IO()
-        for folder in self.foldersInMainPath:
-            self.run_tasks_on_folder(folder)
+        
+        for folder, outputFolder in zip(self.foldersInMainPath, self.outputFolders):
+            self.run_tasks_on_folder(folder, outputFolder)
 
-    def create_IO(self) -> tuple[str, str, list[str], str]:
+    def create_IO(self) -> tuple[str, str, list[str], list[str]]:
         # Select I/O folders
         root = Tk()
         mainPath = filedialog.askdirectory(parent=root, title="Choose top level input data folder")
@@ -45,17 +43,19 @@ class TopLevel:
                 item for item in os.listdir(mainPath) if os.path.isdir(os.path.join(mainPath, item))
             ]
 
-        # Generate results folder inside of Ouput folder.
+        # Generate results folders inside of toplevel output folder and record paths.
+        outputFolders = []
         for folder in foldersInMainPath:
             reportDirPath = resultsPath + "/" + folder + "Results"
             if os.path.exists(reportDirPath):
-                print("Results folder exists, overwriting")
+                print("Results folder exists, overwriting results.")
             else:
                 os.makedirs(reportDirPath)
+            outputFolders.append(reportDirPath)
 
-        return mainPath, resultsPath, foldersInMainPath, reportDirPath
+        return mainPath, resultsPath, foldersInMainPath, outputFolders
 
-    def run_tasks_on_folder(self, folder: str):
+    def run_tasks_on_folder(self, folder: str, outputFolder: str):
         
         """
         acr_snr_task = ACRSNR(
@@ -69,12 +69,19 @@ class TopLevel:
 
         stTask = ACRSliceThickness(
             input_data=get_dicom_files(os.path.join(self.mainPath, folder)),
-            report_dir=self.reportDirPath,
+            report_dir=outputFolder,
             report=True,
             MediumACRPhantom=True
         )
-        results = stTask.run()
-        print(results)
+        
+        
+        
+        
+        
+        
+        
+        
+        stResults = stTask.run()
 
 toplevel = TopLevel()
 toplevel.run()
