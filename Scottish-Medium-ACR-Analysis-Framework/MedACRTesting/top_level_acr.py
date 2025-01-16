@@ -11,6 +11,7 @@ from tkinter import Tk, filedialog
 
 from hazenlib.utils import get_dicom_files, sortDICOMs
 from hazenlib.tasks.acr_slice_thickness_rsch import ACRSliceThickness
+from hazenlib.tasks.acr_uniformity import ACRUniformity
 from hazenlib.tasks.acr_snr import ACRSNR
 
 
@@ -56,32 +57,30 @@ class TopLevel:
         return mainPath, resultsPath, foldersInMainPath, outputFolders
 
     def run_tasks_on_folder(self, folder: str, outputFolder: str):
+        input_data = get_dicom_files(os.path.join(self.mainPath, folder))
         
-        """
-        acr_snr_task = ACRSNR(
-            input_data=get_dicom_files(self.mainPath + "/" + folder),
-            report_dir=self.reportDirPath,
-            report=True,
-            MediumACRPhantom=True,
-        )
-        acr_snr_task.run()
-        """
-
         stTask = ACRSliceThickness(
-            input_data=get_dicom_files(os.path.join(self.mainPath, folder)),
+            input_data=input_data,
             report_dir=outputFolder,
             report=True,
             MediumACRPhantom=True
         )
         
+        snrTask = ACRSNR(
+            input_data=input_data,
+            report_dir=outputFolder,
+            report=True,
+            MediumACRPhantom=True)
         
-        
-        
-        
-        
-        
+        uniTask = ACRUniformity(
+            input_data=input_data,
+            report_dir=outputFolder,
+            report=True,
+            MediumACRPhantom=True)
         
         stResults = stTask.run()
+        snrResults = snrTask.run()
+        uniResults = uniTask.run()
 
 toplevel = TopLevel()
 toplevel.run()

@@ -9,9 +9,11 @@ import numpy as np
 import cv2
 
 from skimage.measure import profile_line
-from scipy.ndimage import gaussian_filter1d
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, peak_widths
 from scipy.interpolate import Akima1DInterpolator
+
+import warnings
+warnings.filterwarnings("ignore", category=np.ComplexWarning)
 
 from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
@@ -37,7 +39,7 @@ class ACRSliceThickness(HazenTask):
                 f"Could not calculate the slice thickness for {self.img_desc(dcm_st)} because of : {e}"
             )
             traceback.print_exc(file=sys.stdout)
-            raise Exception(e)
+            raise
 
         if self.report:
             results["report_image"] = self.report_files
@@ -51,12 +53,17 @@ class ACRSliceThickness(HazenTask):
             import hazenlib.utils
 
             res = hazenlib.utils.GetDicomTag(dcm_st, (0x28, 0x30))
+        res = np.mean(res)
 
-        lines, detectedInsert = self.place_lines(dcm_st.pixel_array)
+        lines = self.place_lines(dcm_st.pixel_array)
         for line in lines:
-            line.analyse_profile(dcm_st.pixel_array)
+            line.analyse_signal(dcm_st.pixel_array)
+
+        FWHM1 = float(lines[0].FWHM_params[0])
+        FWHM2 = float(lines[1].FWHM_params[0])
+
         slice_thickness = round(
-            0.2 * np.mean(res) * (lines[0].FWHM * lines[1].FWHM) / (lines[0].FWHM + lines[1].FWHM),
+            0.2 * res * (FWHM1 * FWHM2) / (FWHM1 + FWHM2),
             1,
         )
 
@@ -64,36 +71,39 @@ class ACRSliceThickness(HazenTask):
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
             plt.tight_layout()
 
-            axes[0].set_title("Line profile placement.")
-            axes[1].set_title("FWHM Profile 1")
-            axes[2].set_title("FWHM Profile 2")
+            axes[0].set_title("Line placement.")
+            axes[1].set_title("Signal across blue line.")
+            axes[2].set_title("Signal across orange line.")
             axes[0].imshow(dcm_st.pixel_array)
-            axes[0].plot(
-                [j.x for j in detectedInsert] + [detectedInsert[0].x],
-                [j.y for j in detectedInsert] + [detectedInsert[0].y],
-            )
 
-            colors = ["g", "r"]
-            plotIndices = [1, 2]
-            for col, line, plotIndex in zip(colors, lines, plotIndices):
+            for i, line in enumerate(lines):
                 axes[0].plot(
-                    [line.start.x, line.end.x], [line.start.y, line.end.y], lw=2, color=col
+                    [line.start.x, line.end.x], [line.start.y, line.end.y], lw=2, color=f"C{i}"
                 )
-                axes[plotIndex].plot(line.profile * np.mean(res), color=col)
-                axes[plotIndex].plot(line.binarizedProfile * np.mean(res), ls="--", color=col)
-            plt.show()
-
+                axes[i + 1].plot(line.signal * res, color=f"C{i}", alpha=0.25, label = "Raw signal")
+                axes[i + 1].plot(line.filteredSignal * res, color=f"C{i}", label = "Smoothed signal")
+                axes[i + 1].hlines(
+                    line.FWHM_params[1] * res,
+                    line.FWHM_params[2] * res,
+                    line.FWHM_params[3] * res,
+                    color=f"C{i}",
+                    linestyle="--",
+                    label = "FWHM"
+                )
+                axes[i + 1].legend()
+            
             img_path = os.path.realpath(
                 os.path.join(self.report_path, f"{self.img_desc(dcm_st)}_slice_thickness.png")
             )
-            fig.savefig(img_path, bbox_inches="tight")
+            fig.savefig(img_path, bbox_inches="tight", dpi=600)
+            plt.close()
             self.report_files.append(img_path)
 
         return slice_thickness
 
     @staticmethod
     def place_lines(img):
-        """Finds the start and end coordinates of the profile lines
+        """Finds the start and end coordinates of the signal lines
 
         Args:
             img (np.ndarray): Pixel array from DICOM image.
@@ -151,11 +161,11 @@ class ACRSliceThickness(HazenTask):
         testPoint = offset_points[0]
         _, closest, middle, furthest = sorted(offset_points, key=lambda x: (testPoint - x).mag)
         lines = [
-            ProfileLine(start=testPoint, end=middle, referenceImg=img),
-            ProfileLine(start=closest, end=furthest, referenceImg=img),
+            SignalLine(start=testPoint, end=middle, referenceImg=img),
+            SignalLine(start=closest, end=furthest, referenceImg=img),
         ]
 
-        return lines, insertCorners
+        return lines
 
 
 class Point:
@@ -216,7 +226,7 @@ class Point:
         return f"Point({self.x}, {self.y})"
 
 
-class ProfileLine:
+class SignalLine:
     def __init__(self, start, end, referenceImg=None):
         # Initialise coordinate attributes
         if isinstance(start, Point):
@@ -229,15 +239,12 @@ class ProfileLine:
             raise TypeError("end must be of type Point")
         self._length = np.sqrt((self.start.x - self.end.x) ** 2 + (self.start.y - self.end.y) ** 2)
 
-        # Initialise profile
-        self._profile = profile_line(
+        # Initialise signal
+        self._signal = profile_line(
             image=referenceImg,
             src=self._start.xy.astype(int).tolist()[::-1],
             dst=self._end.xy.astype(int).tolist()[::-1],
         )
-        
-        # Old smoothing
-        # self._profile = gaussian_filter1d(profile, sigma=len(profile) / 50)
 
     @property
     def start(self):
@@ -255,78 +262,69 @@ class ProfileLine:
         return self._length
 
     @property
-    def profile(self):
-        """Getter for profile attribute"""
-        return self._profile
+    def signal(self):
+        """Getter for signal attribute"""
+        return self._signal
 
     @property
-    def binarizedProfile(self):
-        """Getter for binarized profile attribute"""
-        return self._binarizedProfile
+    def binarizedsignal(self):
+        """Getter for binarized signal attribute"""
+        return self._binarizedSignal
 
     @property
     def FWHM(self):
         """Getter for FWHM attribute"""
         return self._FWHM
 
-    def analyse_profile(self, img):
-        """Calculate profile based on start and end points using image provided in args"""
-        background = self.determine_background(self._profile)
+    def analyse_signal(self, img):
+        """Calculate signal based on start and end points using image provided in args"""
 
-        x_data = np.arange(len(self._profile))
-        y_data = self._profile
+        """
+        x_data = np.arange(len(self._signal))
+        y_data = self._signal
 
         iterator = Akima1DInterpolator(x_data, y_data)
-        x_trend = np.linspace(x_data[0], x_data[-1], int(len(x_data)/15))
+        x_trend = np.linspace(x_data[0], x_data[-1], int(len(x_data) / 15))
         y_trend = iterator(x_trend)
 
         iterator = Akima1DInterpolator(x_trend, y_trend)
         x_smooth = np.linspace(x_data[0], x_data[-1], len(x_data))
         y_smooth = iterator(x_smooth)
-
-        peakX, peakY = self.extract_peaks(y_smooth)
-        lim = (peakY - background)/2 + background
-        binarizedProfile = np.where(y_smooth >= lim, peakY, background)
-        FWHM = binarizedProfile.tolist().count(peakY)
-
-        self._binarizedProfile = binarizedProfile
-        self._FWHM = FWHM * self.length / len(self._profile)
-
         """
-        OLD METHOD
-        backgroundY = self.determine_background(self._profile)
-        peakX, peakY = self.extract_peaks(self._profile)
-        lim = (peakY - np.min(self._profile)) / 2 + np.min(self._profile)
 
-        binarizedProfile = np.where(self._profile >= lim, peakY, backgroundY)
-        FWHM = binarizedProfile.tolist().count(peakY)
+        # peform Fourier analysis to filter
+        samplingFreq = 1000
+        cutOffFreq = 40
 
-        self._binarizedProfile = binarizedProfile
-        self._FWHM = FWHM * self.length / len(self._profile)
-        """
+        fft_signal = np.fft.fft(self._signal)
+        frequencies = np.fft.fftfreq(len(fft_signal), d=1 / samplingFreq)
+        fft_signal[np.abs(frequencies) > cutOffFreq] = 0
+        filteredSignal = np.fft.ifft(fft_signal)
+
+        peakX, peakY = self.extract_peak(filteredSignal)
+
+        self.FWHM_params = peak_widths(filteredSignal, [peakX], rel_height=0.5)
+        self.filteredSignal = filteredSignal
 
     @staticmethod
-    def determine_background(profile):
-        approxBackground = profile[
-            profile < np.min(profile) + 0.05 * abs(np.max(profile) - np.min(profile))
+    def determine_background(signal):
+        approxBackground = signal[
+            signal < np.min(signal) + 0.05 * abs(np.max(signal) - np.min(signal))
         ]
         background = np.mean(approxBackground)
         return background
 
     @staticmethod
-    def extract_peaks(profile):
-        peaks, properties = find_peaks(profile, prominence=3, height=0)
+    def extract_peak(signal):
+        peaks, properties = find_peaks(signal, prominence=3, height=0)
         if len(peaks) > 0:
             peakIndex = np.argmax(properties["peak_heights"])
             peakX = peaks[peakIndex]
-            peakY = profile[peakX]
+            peakY = signal[peakX]
         else:
-            raise ValueError("No peaks detected!")
-            
+            raise ValueError("No peak detected!")
+
         return peakX, peakY
 
     def __str__(self):
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
-    
-    
-    # I believe it is peak extraction function that doesn't work properly - need to fix!
