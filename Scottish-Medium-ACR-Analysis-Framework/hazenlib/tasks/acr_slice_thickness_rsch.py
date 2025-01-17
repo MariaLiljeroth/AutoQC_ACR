@@ -11,10 +11,6 @@ import pydicom
 from skimage.measure import profile_line
 from scipy.signal import find_peaks
 
-import warnings
-
-warnings.filterwarnings("ignore", category=np.ComplexWarning)
-
 from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
 
@@ -127,9 +123,7 @@ class SignalLine:
     def analyse_signal(self, img):
         """Analysis the signal, extracting the FWHM."""
         filteredSignal = self.filter_signal(signal=self._signal, samplingFreq=1000, cutOffFreq=40)
-        peak, baseL, baseR = self.extract_peak(
-            signal=filteredSignal, prominence=1, height=0
-        )
+        peak, baseL, baseR = self.extract_peak(signal=filteredSignal, prominence=1, height=0)
 
         lSlice = filteredSignal[int(baseL.x) : int(peak.x)]
         lBoolMask = lSlice > (peak.y - baseL.y) / 2 + baseL.y
@@ -234,18 +228,8 @@ class ACRSliceThickness(HazenTask):
         if self.report:
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
 
-            axes[0].set_title("Schematic showing line placement within\n the central insert of the ACR Phantom.")
-            axes[0].text(x=0.5,
-                         y=-0.2, 
-                         s=f"Calculated slice thickness: {slice_thickness} mm",
-                         transform=axes[0].transAxes, ha="center",
-                         fontsize=14,
-                         bbox=dict(facecolor="white", boxstyle='round,pad=0.5'))
-            axes[0].axis("off")
-            axes[1].set_title("Signal across blue line.")
-            axes[2].set_title("Signal across orange line.")
+            # Plotting
             axes[0].imshow(dcm_st.pixel_array)
-
             for i, line in enumerate(lines):
                 axes[0].plot(
                     [line.start.x, line.end.x], [line.start.y, line.end.y], lw=2, color=f"C{i}"
@@ -255,7 +239,9 @@ class ACRSliceThickness(HazenTask):
                 axes[i + 1].scatter(
                     line.peakProps.halfPointL.x, line.peakProps.halfPointL.y, color="r"
                 )
-                axes[i + 1].scatter(line.peakProps.halfPointR.x, line.peakProps.halfPointR.y, color="r")
+                axes[i + 1].scatter(
+                    line.peakProps.halfPointR.x, line.peakProps.halfPointR.y, color="r"
+                )
 
                 graphicsPoints, textPoint = self.gen_FWHM_graphic(line.peakProps)
                 axes[i + 1].plot(
@@ -263,17 +249,45 @@ class ACRSliceThickness(HazenTask):
                     [point.y for point in graphicsPoints],
                     ls="--",
                     color="r",
-                    label="FWHM"
+                    label="FWHM",
+                    alpha=0.75,
                 )
                 axes[i + 1].text(
-                    textPoint.x, textPoint.y, f"{int(line.peakProps.FWHM)}", ha="center", va="bottom"
+                    textPoint.x,
+                    textPoint.y,
+                    f"{int(line.peakProps.FWHM)}",
+                    ha="center",
+                    va="bottom",
                 )
                 axes[i + 1].legend()
+
+            # Adjust figure settings
+            axes[0].set_title(
+                "Schematic showing line placement within\n the central insert of the ACR Phantom."
+            )
+            axes[0].text(
+                x=0.5,
+                y=-0.15,
+                s=f"Calculated slice thickness: {slice_thickness} mm",
+                transform=axes[0].transAxes,
+                ha="center",
+                fontsize=14,
+                bbox=dict(facecolor="white", boxstyle="round,pad=0.5"),
+            )
+            axes[0].axis("off")
+
+            axes[1].set_title("Plot of signal across blue line.")
+            axes[1].set_xlabel("Distance along blue line (mm)")
+            axes[1].set_ylabel("Pixel value")
+
+            axes[2].set_title("Plot of signal across orange line.")
+            axes[2].set_xlabel("Distance along orange line (mm)")
+            axes[2].set_ylabel("Pixel value")
+            plt.tight_layout()
 
             img_path = os.path.realpath(
                 os.path.join(self.report_path, f"{self.img_desc(dcm_st)}_slice_thickness.png")
             )
-            plt.tight_layout()
             fig.savefig(img_path, bbox_inches="tight", dpi=600)
             plt.close()
             self.report_files.append(img_path)

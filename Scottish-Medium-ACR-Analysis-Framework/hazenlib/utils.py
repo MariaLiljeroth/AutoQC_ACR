@@ -12,14 +12,16 @@ from skimage import filters
 import hazenlib.exceptions as exc
 
 matplotlib.use("Agg")
-    
+
+
 def sortDICOMs(mainPath: str | pathlib.Path):
     """
     Description
     ------
     Groups the DICOM files within the selected directory into folders - one series per folder
+    Excludes certain Series Descriptions.
     """
-    
+
     if isinstance(mainPath, str):
         mainPath = pathlib.Path(mainPath)
     elif isinstance(pathlib.Path):
@@ -28,20 +30,46 @@ def sortDICOMs(mainPath: str | pathlib.Path):
         raise TypeError("Function arg should be str or pathlib.Path")
 
     fileList = [item for item in mainPath.rglob("*") if item.is_file()]
+    SD_exclude = ["loc", "zip"]
 
+    # Sort each file individually
     print("Please wait, sorting DICOMs.")
     for file in fileList:
         fileName = os.path.split(file)[1]
 
+        # Get SeriesDescription tag
         dcmData = pydicom.dcmread(file)
         sDescrip = dcmData.SeriesDescription
-        
-        folderPath = str(mainPath) + "/" + sDescrip
+
+        # Move to Excluded Images folder if it doesn't need processing.
+        if True in [x in sDescrip.lower() for x in SD_exclude]:
+            folderPath = os.path.join(str(mainPath), "_Excluded Images")
+            if not os.path.exists(folderPath):
+                os.makedirs(folderPath)
+
+            os.rename(file, folderPath + "/" + fileName)
+            continue
+    
+        # If ND put in ND Images Folder.
+        if sDescrip.lower()[-2:] == "nd":
+            folderPath = os.path.join(str(mainPath), "_ND Images")
+            if not os.path.exists(folderPath):
+                os.makedirs(folderPath)
+                
+            subFolderPath = os.path.join(folderPath, sDescrip)
+            if not os.path.exists(subFolderPath):
+                os.makedirs(subFolderPath)
+                
+            os.rename(file, os.path.join(subFolderPath, fileName))
+            continue
+
+        # Otherwise process the image.
+        folderPath = os.path.join(str(mainPath), sDescrip)
         if not os.path.exists(folderPath):
             os.makedirs(folderPath)
 
-        os.rename(file, folderPath + "/" + fileName)
-        
+        os.rename(file, os.path.join(folderPath, fileName))
+
 
 def GetDicomTag(dcm, tag):
     for elem in dcm.iterall():
@@ -128,11 +156,7 @@ def get_manufacturer(dcm: pydicom.Dataset) -> str:
 def get_average(dcm: pydicom.Dataset) -> float:
     try:
         if is_enhanced_dicom(dcm):
-            averages = (
-                dcm.SharedFunctionalGroupsSequence[0]
-                .MRAveragesSequence[0]
-                .NumberOfAverages
-            )
+            averages = dcm.SharedFunctionalGroupsSequence[0].MRAveragesSequence[0].NumberOfAverages
         else:
             averages = dcm.NumberOfAverages
     except:
@@ -183,15 +207,11 @@ def get_slice_thickness(dcm: pydicom.Dataset) -> float:
     if is_enhanced_dicom(dcm):
         try:
             slice_thickness = (
-                dcm.PerFrameFunctionalGroupsSequence[0]
-                .PixelMeasuresSequence[0]
-                .SliceThickness
+                dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness
             )
         except AttributeError:
             slice_thickness = (
-                dcm.PerFrameFunctionalGroupsSequence[0]
-                .Private_2005_140f[0]
-                .SliceThickness
+                dcm.PerFrameFunctionalGroupsSequence[0].Private_2005_140f[0].SliceThickness
             )
         except Exception:
             raise Exception("Unrecognised metadata Field for Slice Thickness")
@@ -205,11 +225,7 @@ def get_pixel_size(dcm: pydicom.Dataset) -> (float, float):
     manufacturer = get_manufacturer(dcm)
     try:
         if is_enhanced_dicom(dcm):
-            dx, dy = (
-                dcm.PerFrameFunctionalGroupsSequence[0]
-                .PixelMeasuresSequence[0]
-                .PixelSpacing
-            )
+            dx, dy = dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing
         else:
             dx, dy = dcm.PixelSpacing
     except:
@@ -260,9 +276,7 @@ def get_rows(dcm: pydicom.Dataset) -> float:
     try:
         rows = dcm.Rows
     except:
-        print(
-            "Warning: Could not find Number of matrix rows. Using default value of 256"
-        )
+        print("Warning: Could not find Number of matrix rows. Using default value of 256")
         rows = 256
 
     return rows
@@ -283,9 +297,7 @@ def get_columns(dcm: pydicom.Dataset) -> float:
     try:
         columns = dcm.Columns
     except:
-        print(
-            "Warning: Could not find matrix size (columns). Using default value of 256."
-        )
+        print("Warning: Could not find matrix size (columns). Using default value of 256.")
         columns = 256
     return columns
 
@@ -302,9 +314,7 @@ def get_field_of_view(dcm: pydicom.Dataset):
         if is_enhanced_dicom(dcm):
             fov = (
                 dcm.Columns
-                * dcm.PerFrameFunctionalGroupsSequence[0]
-                .PixelMeasuresSequence[0]
-                .PixelSpacing[0]
+                * dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]
             )
         else:
             fov = dcm.Columns * dcm.PixelSpacing[0]
@@ -407,9 +417,7 @@ class ShapeDetector:
         optimal_threshold = filters.threshold_li(
             self.blurred, initial_guess=np.quantile(self.blurred, 0.50)
         )
-        self.thresh = np.where(self.blurred > optimal_threshold, 255, 0).astype(
-            np.uint8
-        )
+        self.thresh = np.where(self.blurred > optimal_threshold, 255, 0).astype(np.uint8)
 
         # have to convert type for find contours
         contours = cv.findContours(self.thresh, cv.RETR_TREE, 1)

@@ -16,7 +16,7 @@ class HazenTask:
         self.dcm_list = [dcmread(dicom) for dicom in data_paths]
         self.report: bool = report
         if report_dir is not None:
-            self.report_path = os.path.join(str(report_dir), type(self).__name__)
+            self.report_path = str(report_dir)
         else:
             self.report_path = os.path.join(
                 os.getcwd(), "report_image", type(self).__name__
