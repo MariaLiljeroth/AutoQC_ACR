@@ -1,6 +1,5 @@
 import os
 import sys
-import traceback
 
 sys.path.append(os.path.dirname(os.getcwd()))
 
@@ -10,7 +9,7 @@ import cv2
 import pydicom
 
 from skimage.measure import profile_line
-from scipy.signal import find_peaks, peak_widths
+from scipy.signal import find_peaks
 
 import warnings
 
@@ -23,11 +22,11 @@ from hazenlib.ACRObject import ACRObject
 class Point:
     """Class containing methods and properties of a spatial point, (x, y)"""
 
-    def __init__(self, x, y=None):
-        if isinstance(x, (list, tuple)) and len(x) == 2:
-            self._xy = np.array(x)
-        elif isinstance(x, np.ndarray) and x.shape == (2,):
-            self._xy = x
+    def __init__(self, xy):
+        if isinstance(xy, (list, tuple)) and len(xy) == 2:
+            self._xy = np.array(xy)
+        elif isinstance(xy, np.ndarray) and xy.shape == (2,):
+            self._xy = xy
         else:
             raise TypeError("Arguments of Point must be either a list [x, y] or a 2D numpy array.")
 
@@ -127,14 +126,25 @@ class SignalLine:
 
     def analyse_signal(self, img):
         """Analysis the signal, extracting the FWHM."""
-        filteredSignal = self.filter_signal(self._signal, samplingFreq=1000, cutOffFreq=40)
-        peakX, peakY = self.extract_peak(signal=filteredSignal, prominence=3, height=0)
+        filteredSignal = self.filter_signal(signal=self._signal, samplingFreq=1000, cutOffFreq=40)
+        peak, lBase, rBase = self.extract_peak(
+            signal=filteredSignal, prominence=1, height=np.max(filteredSignal) / 2
+        )
 
-        self._FWHM_params = peak_widths(filteredSignal, [peakX], rel_height=0.5)
+        lSlice = filteredSignal[int(lBase.x) : int(peak.x)]
+        lBoolMask = lSlice > (peak.y - lBase.y) / 2 + lBase.y
+        lBound = Point([lBase.x + np.where(lBoolMask)[0][0], lSlice[lBoolMask][0]])
+
+        rSlice = filteredSignal[int(peak.x) : int(rBase.x)]
+        rBoolMask = rSlice < (peak.y - rBase.y) / 2 + rBase.y
+        rBound = Point([peak.x + np.where(rBoolMask)[0][0], rSlice[rBoolMask][0]])
+
         self._filteredSignal = filteredSignal
+        self.lBound, self.rBound = lBound, rBound
+        self.FWHM = rBound.x - lBound.x
 
     @staticmethod
-    def filter_signal(self, signal: list, samplingFreq: int, cutOffFreq: int) -> list:
+    def filter_signal(signal: list, samplingFreq: int, cutOffFreq: int) -> list:
         """Filters signal provided in args using fourier analysis approach."""
         samplingFreq = 1000
         cutOffFreq = 40
@@ -142,7 +152,7 @@ class SignalLine:
         fft_signal = np.fft.fft(signal)
         frequencies = np.fft.fftfreq(len(fft_signal), d=1 / samplingFreq)
         fft_signal[np.abs(frequencies) > cutOffFreq] = 0
-        filteredSignal = np.fft.ifft(fft_signal)
+        filteredSignal = np.fft.ifft(fft_signal).real
 
         return filteredSignal
 
@@ -153,11 +163,17 @@ class SignalLine:
         if len(peaks) > 0:
             peakIndex = np.argmax(properties["peak_heights"])
             peakX = peaks[peakIndex]
-            peakY = signal[peakX]
+            peak = Point([peakX, signal[peakX]])
+
+            lBaseX = properties["left_bases"][peakIndex]
+            lBase = Point([lBaseX, signal[lBaseX]])
+
+            rBaseX = properties["right_bases"][peakIndex]
+            rBase = Point([rBaseX, signal[rBaseX]])
         else:
             raise ValueError("No peak detected!")
 
-        return peakX, peakY
+        return peak, lBase, rBase
 
     def __str__(self):
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
@@ -177,16 +193,8 @@ class ACRSliceThickness(HazenTask):
         results = self.init_result_dict()
         results["file"] = self.img_desc(dcm_st)
 
-        try:
-            result = self.calc_slice_thickness(dcm_st)
-            results["measurement"] = {"slice width mm": round(result, 2)}
-
-        except Exception as e:
-            print(
-                f"Could not calculate the slice thickness for {self.img_desc(dcm_st)} because of : {e}"
-            )
-            traceback.print_exc(file=sys.stdout)
-            raise Exception(e)
+        result = self.calc_slice_thickness(dcm_st)
+        results["measurement"] = {"slice width mm": round(result, 2)}
 
         if self.report:
             results["report_image"] = self.report_files
@@ -207,8 +215,7 @@ class ACRSliceThickness(HazenTask):
         for line in lines:
             line.analyse_signal(dcm_st.pixel_array)
 
-        FWHM1 = float(lines[0].FWHM_params[0])
-        FWHM2 = float(lines[1].FWHM_params[0])
+        FWHM1, FWHM2 = [float(lines[i].FWHM) for i in range(len(lines))]
 
         slice_thickness = round(
             0.2 * res * (FWHM1 * FWHM2) / (FWHM1 + FWHM2),
@@ -220,7 +227,7 @@ class ACRSliceThickness(HazenTask):
             plt.tight_layout()
 
             axes[0].set_title(
-                "Schematic showing line placement within the central insert of the ACR Phantom."
+                "Schematic showing line placement within\n the central insert of the ACR Phantom."
             )
             axes[1].set_title("Signal across blue line.")
             axes[2].set_title("Signal across orange line.")
@@ -232,14 +239,8 @@ class ACRSliceThickness(HazenTask):
                 )
                 axes[i + 1].plot(line.signal * res, color=f"C{i}", alpha=0.25, label="Raw signal")
                 axes[i + 1].plot(line.filteredSignal * res, color=f"C{i}", label="Smoothed signal")
-                axes[i + 1].hlines(
-                    line.FWHM_params[1] * res,
-                    line.FWHM_params[2] * res,
-                    line.FWHM_params[3] * res,
-                    color=f"C{i}",
-                    linestyle="--",
-                    label="FWHM",
-                )
+                axes[i + 1].scatter(line.lBound.x, line.lBound.y, color="r")
+                axes[i + 1].scatter(line.rBound.x, line.rBound.y, color="r")
                 axes[i + 1].legend()
 
             img_path = os.path.realpath(
@@ -267,6 +268,7 @@ class ACRSliceThickness(HazenTask):
         contours, _ = cv2.findContours(
             img_binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
         )
+
         contours = sorted(
             contours,
             key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])),

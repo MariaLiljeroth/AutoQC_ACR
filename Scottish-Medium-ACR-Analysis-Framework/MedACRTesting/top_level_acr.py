@@ -23,7 +23,7 @@ class TopLevel:
             self.foldersInMainPath,
             self.outputFolders,
         ) = self.create_IO()
-        
+
         for folder, outputFolder in zip(self.foldersInMainPath, self.outputFolders):
             self.run_tasks_on_folder(folder, outputFolder)
 
@@ -58,29 +58,24 @@ class TopLevel:
 
     def run_tasks_on_folder(self, folder: str, outputFolder: str):
         input_data = get_dicom_files(os.path.join(self.mainPath, folder))
-        
+
         stTask = ACRSliceThickness(
-            input_data=input_data,
-            report_dir=outputFolder,
-            report=True,
-            MediumACRPhantom=True
+            input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
         )
-        
+
         snrTask = ACRSNR(
-            input_data=input_data,
-            report_dir=outputFolder,
-            report=True,
-            MediumACRPhantom=True)
-        
-        uniTask = ACRUniformity(
-            input_data=input_data,
-            report_dir=outputFolder,
-            report=True,
-            MediumACRPhantom=True)
-        
+            input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
+        )
+
+        unifTask = ACRUniformity(
+            input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
+        )
+
         stResults = stTask.run()
-        snrResults = snrTask.run()
-        uniResults = uniTask.run()
+        #snrResults = snrTask.run()
+        #unifResults = unifTask.run()
+        
+
 
 toplevel = TopLevel()
 toplevel.run()

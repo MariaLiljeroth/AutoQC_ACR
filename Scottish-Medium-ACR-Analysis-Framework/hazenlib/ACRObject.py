@@ -37,6 +37,8 @@ class ACRObject:
         
         # Check whether images of the phantom are the correct orientation
         self.orientation_checks()
+        # self.rotation_tests() Added by NC temporarily #############################
+        
         # Determine whether image rotation is necessary
         self.rot_angle = self.determine_rotation()
         # Store the DCM object of slice 7 as it is used often
@@ -162,6 +164,88 @@ class ACRObject:
                 dcm.PixelData = flipped_images[index].tobytes()
         else:
             print("LR orientation swap not required.")
+            
+    # Test function NC to experiment with rotation detection.
+    def rotation_tests(self):
+        # Select first slice
+        dcm0 = self.dcms[0].pixel_array
+        
+        # Zoom in on resolution insert        
+        clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
+        dcm0_contrastEnhanced = clahe.apply(dcm0)
+        _, dcm0_binary = cv2.threshold(
+            dcm0_contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+
+        contours, _ = cv2.findContours(
+            dcm0_binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
+        )
+
+        contours = sorted(
+            contours,
+            key=lambda cont: cv2.contourArea(cont),
+            reverse=True,
+            )  
+            
+        x, y, w, h = cv2.boundingRect(contours[1]) 
+        insert = dcm0[y:y+h, x:x+w]
+        
+        # Rotate if horizontal
+        if insert.shape[0] > insert.shape[1]:
+            insert = cv2.rotate(insert, cv2.ROTATE_90_CLOCKWISE)
+            rotate = True
+        else:
+            rotate = False
+        
+        # Find contours
+        insert_blur = cv2.GaussianBlur(insert, (7,7), 0, 0)
+        canny = cv2.Canny(insert_blur.astype(np.uint8), 50, 80)
+        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
+        
+        # Filter out non-quadrilaterals and small contours
+        quadrilaterals = []
+        for contour in contours:
+            epsilon = 0.05 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            if len(approx) == 4 and 50 >= cv2.arcLength(contour, True) >= 10:
+                quadrilaterals.append(approx)
+        
+        def aspect_ratio_minAreaRect(contour):
+            _ , (width, height), _ = cv2.minAreaRect(contour)
+            maxAS = max(width/height, height/width)
+            return maxAS
+        
+        # Find the most square contour, find its X value and determine if image needs to be flipped in X after rotation.
+        quadrilaterals = [x for x in quadrilaterals if 1.25 >= aspect_ratio_minAreaRect(x) >= 0.75]
+        squareness = sorted(quadrilaterals, key=lambda x: abs(aspect_ratio_minAreaRect(x) - 1), reverse=True)
+        mostSquare = squareness[0].reshape((4,2))
+        avgX = np.mean(mostSquare[:,0])
+        if avgX <= insert_blur.shape[1] / 2:
+            xFlip = True
+        else:
+            xFlip = False
+        
+        # Rotate and flip all images if necessary
+        if rotate:
+            rotated_images = [cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE) for image in self.images]
+            for index, dcm in enumerate(self.dcms):
+                dcm.PixelData = rotated_images[index].tobytes()
+            print("NC Rotate")
+        else:
+            print("NC Not Rotated")
+        
+        if xFlip:
+            flipped_images = [np.fliplr(image) for image in self.images]
+            for index, dcm in enumerate(self.dcms):
+                dcm.PixelData = flipped_images[index].tobytes()
+            print("NC Flipped in X")
+        else:
+            print("NC Not flipped in X")
+        pass
+        
+        
+        
+        
 
     def determine_rotation(self):
         """
