@@ -127,21 +127,20 @@ class SignalLine:
     def analyse_signal(self, img):
         """Analysis the signal, extracting the FWHM."""
         filteredSignal = self.filter_signal(signal=self._signal, samplingFreq=1000, cutOffFreq=40)
-        peak, lBase, rBase = self.extract_peak(
+        peak, baseL, baseR = self.extract_peak(
             signal=filteredSignal, prominence=1, height=np.max(filteredSignal) / 2
         )
 
-        lSlice = filteredSignal[int(lBase.x) : int(peak.x)]
-        lBoolMask = lSlice > (peak.y - lBase.y) / 2 + lBase.y
-        lBound = Point([lBase.x + np.where(lBoolMask)[0][0], lSlice[lBoolMask][0]])
+        lSlice = filteredSignal[int(baseL.x) : int(peak.x)]
+        lBoolMask = lSlice > (peak.y - baseL.y) / 2 + baseL.y
+        halfPointL = Point([baseL.x + np.where(lBoolMask)[0][0], lSlice[lBoolMask][0]])
 
-        rSlice = filteredSignal[int(peak.x) : int(rBase.x)]
-        rBoolMask = rSlice < (peak.y - rBase.y) / 2 + rBase.y
-        rBound = Point([peak.x + np.where(rBoolMask)[0][0], rSlice[rBoolMask][0]])
+        rSlice = filteredSignal[int(peak.x) : int(baseR.x)]
+        rBoolMask = rSlice < (peak.y - baseR.y) / 2 + baseR.y
+        halfPointR = Point([peak.x + np.where(rBoolMask)[0][0], rSlice[rBoolMask][0]])
 
         self._filteredSignal = filteredSignal
-        self.lBound, self.rBound = lBound, rBound
-        self.FWHM = rBound.x - lBound.x
+        self.peakProps = PeakProperties(peak, halfPointL, halfPointR, baseL, baseR)
 
     @staticmethod
     def filter_signal(signal: list, samplingFreq: int, cutOffFreq: int) -> list:
@@ -177,6 +176,16 @@ class SignalLine:
 
     def __str__(self):
         return f"Line(\n\t{self.start},\n\t{self.end}\n)"
+
+
+class PeakProperties:
+    def __init__(self, peak, halfPointL, halfPointR, baseL, baseR):
+        self.peak = peak
+        self.halfPointL = halfPointL
+        self.halfPointR = halfPointR
+        self.baseL = baseL
+        self.baseR = baseR
+        self.FWHM = halfPointR.x - halfPointL.x
 
 
 class ACRSliceThickness(HazenTask):
@@ -215,7 +224,7 @@ class ACRSliceThickness(HazenTask):
         for line in lines:
             line.analyse_signal(dcm_st.pixel_array)
 
-        FWHM1, FWHM2 = [float(lines[i].FWHM) for i in range(len(lines))]
+        FWHM1, FWHM2 = [float(lines[i].peakProps.FWHM) for i in range(len(lines))]
 
         slice_thickness = round(
             0.2 * res * (FWHM1 * FWHM2) / (FWHM1 + FWHM2),
@@ -224,7 +233,6 @@ class ACRSliceThickness(HazenTask):
 
         if self.report:
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
-            plt.tight_layout()
 
             axes[0].set_title(
                 "Schematic showing line placement within\n the central insert of the ACR Phantom."
@@ -239,13 +247,27 @@ class ACRSliceThickness(HazenTask):
                 )
                 axes[i + 1].plot(line.signal * res, color=f"C{i}", alpha=0.25, label="Raw signal")
                 axes[i + 1].plot(line.filteredSignal * res, color=f"C{i}", label="Smoothed signal")
-                axes[i + 1].scatter(line.lBound.x, line.lBound.y, color="r")
-                axes[i + 1].scatter(line.rBound.x, line.rBound.y, color="r")
+                axes[i + 1].scatter(
+                    line.peakProps.halfPointL.x, line.peakProps.halfPointL.y, color="r"
+                )
+                axes[i + 1].scatter(line.peakProps.halfPointR.x, line.peakProps.halfPointR.y, color="r")
+
+                graphicsPoints, textPoint = self.gen_FWHM_graphic(line.peakProps)
+                axes[i + 1].plot(
+                    [point.x for point in graphicsPoints],
+                    [point.y for point in graphicsPoints],
+                    ls="--",
+                    color="r",
+                )
+                axes[i + 1].text(
+                    textPoint.x, textPoint.y, f"{int(line.peakProps.FWHM)}", ha="center", va="bottom"
+                )
                 axes[i + 1].legend()
 
             img_path = os.path.realpath(
                 os.path.join(self.report_path, f"{self.img_desc(dcm_st)}_slice_thickness.png")
             )
+            plt.tight_layout()
             fig.savefig(img_path, bbox_inches="tight", dpi=600)
             plt.close()
             self.report_files.append(img_path)
@@ -311,3 +333,25 @@ class ACRSliceThickness(HazenTask):
         ]
 
         return lines
+
+    @staticmethod
+    def gen_FWHM_graphic(pp: PeakProperties) -> list[Point]:
+        halfPointL_low = Point([pp.halfPointL.x, pp.baseL.y])
+        halfPointL_high = Point([pp.halfPointL.x, pp.peak.y])
+
+        halfPointR_high = Point([pp.halfPointR.x, pp.peak.y])
+        halfPointR_low = Point([pp.halfPointR.x, pp.baseR.y])
+
+        graphicsPoints = [
+            pp.baseL,
+            halfPointL_low,
+            pp.halfPointL,
+            halfPointL_high,
+            halfPointR_high,
+            pp.halfPointR,
+            halfPointR_low,
+            pp.baseR,
+        ]
+        textPoint = Point([(pp.halfPointL.x + pp.halfPointR.x) / 2, pp.peak.y + 1])
+
+        return graphicsPoints, textPoint
