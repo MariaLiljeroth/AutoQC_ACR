@@ -30,9 +30,18 @@ class TopLevel:
     def create_IO(self) -> tuple[str, str, list[str], list[str]]:
         # Select I/O folders
         root = Tk()
-        mainPath = filedialog.askdirectory(parent=root, title="Choose top level input data folder")
-        resultsPath = filedialog.askdirectory(parent=root, title="Choose output data folder")
-        root.destroy()
+        root.withdraw()
+
+        mainPath = filedialog.askdirectory(parent=root, title="Choose top level input data folder.")
+        if mainPath == "":
+            raise ValueError("No top level input folder selected.")
+        if len(os.listdir(mainPath)) == 0:
+            root.destroy()
+            raise ValueError("The selected top level input folder should not be completely empty.")
+
+        resultsPath = filedialog.askdirectory(parent=root, title="Choose top level output data folder.")
+        if resultsPath == "":
+            raise ValueError("No top level output folder selected.")
 
         # Find folders in mainPath and sort Input folder using DICOM sorter.
         foldersInMainPath = [

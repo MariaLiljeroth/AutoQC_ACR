@@ -128,7 +128,7 @@ class SignalLine:
         """Analysis the signal, extracting the FWHM."""
         filteredSignal = self.filter_signal(signal=self._signal, samplingFreq=1000, cutOffFreq=40)
         peak, baseL, baseR = self.extract_peak(
-            signal=filteredSignal, prominence=1, height=np.max(filteredSignal) / 2
+            signal=filteredSignal, prominence=1, height=0
         )
 
         lSlice = filteredSignal[int(baseL.x) : int(peak.x)]
@@ -234,9 +234,14 @@ class ACRSliceThickness(HazenTask):
         if self.report:
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
 
-            axes[0].set_title(
-                "Schematic showing line placement within\n the central insert of the ACR Phantom."
-            )
+            axes[0].set_title("Schematic showing line placement within\n the central insert of the ACR Phantom.")
+            axes[0].text(x=0.5,
+                         y=-0.2, 
+                         s=f"Calculated slice thickness: {slice_thickness} mm",
+                         transform=axes[0].transAxes, ha="center",
+                         fontsize=14,
+                         bbox=dict(facecolor="white", boxstyle='round,pad=0.5'))
+            axes[0].axis("off")
             axes[1].set_title("Signal across blue line.")
             axes[2].set_title("Signal across orange line.")
             axes[0].imshow(dcm_st.pixel_array)
@@ -258,6 +263,7 @@ class ACRSliceThickness(HazenTask):
                     [point.y for point in graphicsPoints],
                     ls="--",
                     color="r",
+                    label="FWHM"
                 )
                 axes[i + 1].text(
                     textPoint.x, textPoint.y, f"{int(line.peakProps.FWHM)}", ha="center", va="bottom"
