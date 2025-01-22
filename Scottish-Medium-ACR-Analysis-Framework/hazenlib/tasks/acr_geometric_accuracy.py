@@ -126,9 +126,7 @@ class ACRGeometricAccuracy(HazenTask):
             tuple of float: horizontal and vertical distances
         """
         img = dcm.pixel_array
-        mask = self.ACR_obj.get_mask_image(self.ACR_obj.images[6])
-        if self.ACR_obj.MediumACRPhantom==True:#Found that more agressive thresholding works a bit better but wanted to leave the above in so the unit tests pass.
-            mask = self.ACR_obj.get_mask_image(self.ACR_obj.images[6],mag_threshold=0.4)
+        mask = self.ACR_obj.get_mask_image(self.ACR_obj.images[4])
         cxy = self.ACR_obj.centre
         length_dict = self.ACR_obj.measure_orthogonal_lengths(mask)
 
@@ -178,7 +176,7 @@ class ACRGeometricAccuracy(HazenTask):
             axes[2].set_title("Geometric Accuracy for Slice 1")
 
             img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}.png")
+                os.path.join(self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png")
             )
             fig.savefig(img_path)
             self.report_files.append(img_path)
@@ -269,7 +267,7 @@ class ACRGeometricAccuracy(HazenTask):
             axes[2].set_title("Geometric Accuracy for Slice 5")
 
             img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}.png")
+                os.path.join(self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png")
             )
             fig.savefig(img_path)
             self.report_files.append(img_path)
