@@ -99,6 +99,7 @@ class TopLevel:
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
 
+            """
             unifTask = ACRUniformity(
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
@@ -110,10 +111,10 @@ class TopLevel:
             resTask = ACRSpatialResolution(
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
+            """
 
             stResults = stTask.run()
             snrResults = snrTask.run()
-
             unifResults = None
             geomResults = None
             resResults = None

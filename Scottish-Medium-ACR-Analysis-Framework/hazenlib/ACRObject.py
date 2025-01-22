@@ -3,7 +3,6 @@ import scipy
 import skimage
 import numpy as np
 from pydicom import dcmread
-import sys
 import matplotlib.pyplot as plt
 from hazenlib.utils import get_image_orientation
 from pydicom.pixel_data_handlers.util import apply_modality_lut
@@ -18,17 +17,20 @@ class ACRObject:
         if "MediumACRPhantom" in kwargs.keys():
             self.MediumACRPhantom = kwargs["MediumACRPhantom"]
 
-        # Added in a flag to make use of the dot matrix instead of MTF for spatial res
-        # self.UseDotMatrix=False
-        # if "UseDotMatrix" in kwargs.keys():
-        #    self.UseDotMatrix =kwargs["UseDotMatrix"]
+        """
+        Added in a flag to make use of the dot matrix instead of MTF for spatial res
+        self.UseDotMatrix=False
+        if "UseDotMatrix" in kwargs.keys():
+        self.UseDotMatrix =kwargs["UseDotMatrix"]
+        """
 
         # Initialise an ACR object from a stack of images of the ACR phantom
         self.dcm_list = dcm_list
+        
         # Load files as DICOM and their pixel arrays into 'images'
         self.images, self.dcms = self.sort_images()
+        
         # Store the pixel spacing value from the first image (expected to be the same for all)
-
         if "PixelSpacing" in self.dcms[0]:
             self.pixel_spacing = self.dcms[0].PixelSpacing
         else:
@@ -36,16 +38,19 @@ class ACRObject:
                 if elem.tag == (0x28, 0x30):
                     self.pixel_spacing = elem.value
 
-        # Check whether images of the phantom are the correct orientation
-        self.orientation_checks()
-        # self.rotation_tests() Added by NC temporarily #############################
+        # Check slice order of images and whether images need to be flipped LR.
+        self.slice_order_checks()
+        self.LR_orientation_checks()
 
         # Determine whether image rotation is necessary
         self.rot_angle = self.determine_rotation()
+        
         # Store the DCM object of slice 7 as it is used often
         self.slice7_dcm = self.dcms[6]
+        
         # Find the centre coordinates of the phantom (circle)
-        self.centre, self.radius = self.find_phantom_center()
+        self.centre, self.radius = self.find_phantom_center(self.images[4])
+        
         # Store a mask image of slice 7 for reusability
         self.mask_image = self.get_mask_image(self.images[6])
 
@@ -88,6 +93,16 @@ class ACRObject:
                 dicom_stack = [self.dcm_list[i] for i in np.argsort(y)]
             elif orientation == "Sagittal":
                 dicom_stack = [self.dcm_list[i] for i in np.argsort(x)]
+
+                # Rotate sagittals as required.
+                for i, dcm in enumerate(dicom_stack):
+                    rotated_image = skimage.transform.rotate(
+                        dcm.pixel_array, -90, resize=False, preserve_range=True
+                    )
+                    rotated_pixel_array = rotated_image.astype(dcm.pixel_array.dtype)
+                    dicom_stack[i].PixelData = rotated_pixel_array.tobytes()
+                    dicom_stack[i].Rows, dicom_stack[i].Columns = rotated_image.shape
+
         else:
             print(
                 "WARNING: Incompatible or missing image position patient tag, ordering based on filenames, this may lead to incompatible data structures!"
@@ -109,15 +124,14 @@ class ACRObject:
         ]
         return img_stack, dicom_stack
 
-    def orientation_checks(self):
+    def slice_order_checks(self):
         """
-        Perform orientation checks on a set of images to determine if slice order inversion or an
-        LR orientation swap is required.
+        Perform orientation checks on a set of images to determine if slice order inversion is required.
 
         Description
         -----------
         This function analyzes the given set of images and their associated DICOM objects to determine if any
-        adjustments are needed to restore the correct slice order and view orientation.
+        adjustments are needed to restore the correct slice order.
         """
         test_images = (self.images[0], self.images[-1])
         dx = self.pixel_spacing[0]
@@ -149,11 +163,6 @@ class ACRObject:
             for norm_image in normalised_images
         ]
 
-        if detected_circles[0] is not None:
-            true_circle = detected_circles[0].flatten()
-        else:
-            true_circle = detected_circles[1].flatten()
-
         if detected_circles[0] is None and detected_circles[1] is not None:
             print("Performing slice order inversion to restore correct slice order.")
             self.images.reverse()
@@ -161,93 +170,74 @@ class ACRObject:
         else:
             print("Slice order inversion not required.")
 
-        if true_circle[0] > self.images[0].shape[0] // 2:
-            print("Performing LR orientation swap to restore correct view.")
-            flipped_images = [np.fliplr(image) for image in self.images]
-            for index, dcm in enumerate(self.dcms):
-                dcm.PixelData = flipped_images[index].tobytes()
-        else:
-            print("LR orientation swap not required.")
+    def LR_orientation_checks(self):
+        # Find center of potentially x-axis inverted image.
+        center, radius = self.find_phantom_center(self.images[4])
+        img2 = self.images[1]
 
-    # Test function NC to experiment with rotation detection.
-    def rotation_tests(self):
-        # Select first slice
-        dcm0 = self.dcms[0].pixel_array
+        # Generate masks of phantom, and ring about phantom edge.
+        phantomMask = self.circular_mask(center, radius * 0.98, img2.shape)
+        tightMask = self.circular_mask(center, radius * 0.95, img2.shape)
+        outerMask = self.circular_mask(center, radius * 1.1, img2.shape)
+        ringMask = np.logical_xor(tightMask, outerMask)
 
-        # Zoom in on resolution insert
+        # Apply ring mask to image and dilate result.
+        ring = np.zeros_like(img2)
+        ring[ringMask] = img2[ringMask]
+        dilatedRing = cv2.dilate(ring, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)), 1)
+        dilatedRing = cv2.GaussianBlur(dilatedRing, (3, 3), 0, 0)
+
+        # Combine two images.
+        img2Mod = img2.copy()
+        img2Mod[~phantomMask] = dilatedRing[~phantomMask]
+
+        # Create binary modified image.
         clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
-        dcm0_contrastEnhanced = clahe.apply(dcm0)
-        _, dcm0_binary = cv2.threshold(
-            dcm0_contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
+        contrastEnhanced = clahe.apply(img2Mod)
+        _, binary = cv2.threshold(contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
+        # Find contour of top L shape
         contours, _ = cv2.findContours(
-            dcm0_binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
+            binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
         )
 
         contours = sorted(
             contours,
-            key=lambda cont: cv2.contourArea(cont),
+            key=lambda cont: np.max(cont[:, 0, 1]),
             reverse=True,
         )
 
-        x, y, w, h = cv2.boundingRect(contours[1])
-        insert = dcm0[y : y + h, x : x + w]
+        topLShape = contours[-1]
 
-        # Rotate if horizontal
-        if insert.shape[0] > insert.shape[1]:
-            insert = cv2.rotate(insert, cv2.ROTATE_90_CLOCKWISE)
-            rotate = True
-        else:
-            rotate = False
+        # Find a bbox around top L shape
+        bbox = cv2.boundingRect(topLShape)
+        x, y, w, h = bbox
 
-        # Find contours
-        insert_blur = cv2.GaussianBlur(insert, (7, 7), 0, 0)
-        canny = cv2.Canny(insert_blur.astype(np.uint8), 50, 80)
-        contours, _ = cv2.findContours(canny, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
+        def points_from_boundingRect(x, y, w, h):
+            points = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
 
-        # Filter out non-quadrilaterals and small contours
-        quadrilaterals = []
-        for contour in contours:
-            epsilon = 0.05 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-            if len(approx) == 4 and 50 >= cv2.arcLength(contour, True) >= 10:
-                quadrilaterals.append(approx)
+            return points
 
-        def aspect_ratio_minAreaRect(contour):
-            _, (width, height), _ = cv2.minAreaRect(contour)
-            maxAS = max(width / height, height / width)
-            return maxAS
+        # Split bbox into two along short edge
+        boxL = np.int0(points_from_boundingRect(x, y, w / 2, h))
+        boxR = np.int0(points_from_boundingRect(x + w / 2, y, w / 2, h))
 
-        # Find the most square contour, find its X value and determine if image needs to be flipped in X after rotation.
-        quadrilaterals = [x for x in quadrilaterals if 1.25 >= aspect_ratio_minAreaRect(x) >= 0.75]
-        squareness = sorted(
-            quadrilaterals, key=lambda x: abs(aspect_ratio_minAreaRect(x) - 1), reverse=True
-        )
-        mostSquare = squareness[0].reshape((4, 2))
-        avgX = np.mean(mostSquare[:, 0])
-        if avgX <= insert_blur.shape[1] / 2:
-            xFlip = True
-        else:
-            xFlip = False
+        # Find the mean pixel value within each smaller rect
+        maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(np.uint8)
+        maskR = cv2.fillPoly(np.zeros_like(img2), [boxR], (255, 255, 255)).astype(np.uint8)
 
-        # Rotate and flip all images if necessary
-        if rotate:
-            rotated_images = [cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE) for image in self.images]
-            for index, dcm in enumerate(self.dcms):
-                dcm.PixelData = rotated_images[index].tobytes()
-            print("NC Rotate")
-        else:
-            print("NC Not Rotated")
+        meanL = cv2.mean(img2, mask=maskL)
+        meanR = cv2.mean(img2, mask=maskR)
 
-        if xFlip:
+        # LR orientation swap if required
+        if meanL < meanR:
+            print("Performing LR orientation swap to restore correct view.")
             flipped_images = [np.fliplr(image) for image in self.images]
             for index, dcm in enumerate(self.dcms):
                 dcm.PixelData = flipped_images[index].tobytes()
-            print("NC Flipped in X")
+            self.images = flipped_images
         else:
-            print("NC Not flipped in X")
-        pass
+            print("LR orientation swap not required.")
 
     def determine_rotation(self):
         """
@@ -261,7 +251,7 @@ class ACRObject:
 
         thresh = cv2.threshold(self.images[0], 127, 255, cv2.THRESH_BINARY)[1]
         if (
-            self.MediumACRPhantom == True
+            self.MediumACRPhantom is True
         ):  # the above thresh doesnt work for the med phantom (not sure why but maybe it shouldnt be a flat thresh anyway...)
             thresh = cv2.threshold(
                 self.images[0], np.max(self.images[0]) * 0.25, 255, cv2.THRESH_BINARY
@@ -295,12 +285,12 @@ class ACRObject:
             self.images, self.rot_angle, resize=False, preserve_range=True
         )
 
-    def find_phantom_center(self):
-        img = self.images[4]
+    @staticmethod
+    def find_phantom_center(img):
         _, img_binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         canny = cv2.Canny(img_binary.astype(np.uint8), threshold1=30, threshold2=50)
-        
-        param2=1
+
+        param2 = 1
         circles = np.zeros((2, 1))
         # Stop when first circle is found
         while circles.shape[0] > 1:
@@ -308,92 +298,17 @@ class ACRObject:
                 image=canny,
                 method=cv2.HOUGH_GRADIENT,
                 dp=1,
-                minDist=int(canny.shape[0]/2),
+                minDist=int(canny.shape[0] / 2),
                 param1=30,
-                param2=param2
+                param2=param2,
             ).reshape(-1, 3)
             param2 += 1
-        
+
         circles = circles.flatten()
         centre = circles[:2]
         radius = circles[2]
-        
-        return centre, radius
-
-    # Commented out by NC as written a new, improved function.
-    """
-    def find_phantom_center(self):
-        Find the center of the ACR phantom by filtering the uniformity slice and using the Hough circle detector.
-
-
-        Returns
-        -------
-        centre  : tuple
-            Tuple of ints representing the (x, y) center of the image.
-
-        img = self.images[4]
-        dx, dy = self.pixel_spacing
-        img_blur = cv2.GaussianBlur(img, (1, 1), 0)
-        img_grad = cv2.Sobel(img_blur, 0, dx=1, dy=1)
-
-        if self.MediumACRPhantom == False:
-            img_blur = cv2.GaussianBlur(img, (1, 1), 0)
-            img_grad = cv2.Sobel(img_blur, 0, dx=1, dy=1)
-            detected_circles = cv2.HoughCircles(
-                img_grad,
-                cv2.HOUGH_GRADIENT,
-                1,
-                param1=50,
-                param2=30,
-                minDist=int(180 / dy),
-                minRadius=int(180 / (2 * dy)),
-                maxRadius=int(200 / (2 * dx)),
-            ).flatten()
-
-            # This prob should be rounding like it is below but i kept it this way so the unit tests all work.
-            centre = [int(i) for i in detected_circles[:2]]
-            radius = int(detected_circles[2])
-
-        else:  # Tried to improve this by implementing a circle fitting algo, seems to be more relaiable needs more testing though.
-
-            img_blur = cv2.medianBlur(img, 5)
-            img_grad = cv2.Sobel(img_blur, 0, dx=1, dy=1)
-
-            detected_circles = cv2.HoughCircles(
-                img_grad,
-                cv2.HOUGH_GRADIENT,
-                1,
-                param1=40,
-                param2=30,
-                minDist=int(180 / dy),
-                minRadius=int(155 / (2 * dy)),
-                maxRadius=int(180 / (2 * dx)),
-            ).flatten()
-            centre = [int(i) for i in detected_circles[:2]]
-            centre = [int(round(i)) for i in detected_circles[:2]]
-            radius = int(detected_circles[2])
-            radius = int(round(detected_circles[2]))
-
-            # The commented block below is a posible improvememnet but testing seems to suggest the above was ok
-
-            values = img[img > np.mean(img)*0.1] 
-            image = img > np.median(values)*0.5
-            from skimage import io, color, measure, draw, img_as_bool
-            from scipy import optimize
-            def cost(params):
-                x0, y0, r = params
-                coords = draw.disk((y0, x0), r, shape=image.shape)
-                template = np.zeros_like(image)
-                template[coords] = 1
-                return -np.sum(template == image)
-            test = image.shape
-            x0, y0, r = optimize.fmin(cost, (int(image.shape[0]/2), int(image.shape[1]/2), 165 / (2 * dx)))
-            detected_circles= [x0,y0,r]
-            centre = [int(round(i)) for i in detected_circles[:2]] # This is better as round than just int otherwise its always rounding down.
-            radius = int(round(detected_circles[2]))
 
         return centre, radius
-    """
 
     def get_mask_image(self, image, mag_threshold=0.05, open_threshold=500):
         """Create a masked pixel array
