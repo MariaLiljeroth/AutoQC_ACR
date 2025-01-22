@@ -203,10 +203,10 @@ class ACRSpatialResolution(HazenTask):
         Returns:
             np.ndarray: subset of a pixel array with given width
         """
-        crop_x, crop_y = (x - width // 2, x + width // 2), (
+        crop_x, crop_y = np.int0((x - width // 2, x + width // 2)), np.int0((
             y - width // 2,
             y + width // 2,
-        )
+        ))
         crop_img = img[crop_y[0] : crop_y[1], crop_x[0] : crop_x[1]]
 
         return crop_img

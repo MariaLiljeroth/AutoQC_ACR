@@ -45,12 +45,12 @@ class ACRUniformity(HazenTask):
         """
         # Initialise results dictionary
         results = self.init_result_dict()
-        results["file"] = self.img_desc(self.ACR_obj.slice7_dcm)
+        results["file"] = self.img_desc(self.ACR_obj.dcms[4])
 
         try:
             #result = self.get_integral_uniformity(self.ACR_obj.slice7_dcm)
             #results["measurement"] = {"integral uniformity %": round(result, 2)}
-            unif, max_roi, min_roi, max_pos, min_pos = self.get_integral_uniformity(self.ACR_obj.slice7_dcm)
+            unif, max_roi, min_roi, max_pos, min_pos = self.get_integral_uniformity(self.ACR_obj.dcms[4])
             results["measurement"] = {
                 "integral uniformity %": round(unif, 2),
                 "max roi": round(max_roi,1),
@@ -252,7 +252,7 @@ class ACRUniformity(HazenTask):
             )
 
             img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}.png")
+                os.path.join(self.report_path, f"{self.img_desc(dcm)}_uniformity.png")
             )
             fig.savefig(img_path)
             self.report_files.append(img_path)

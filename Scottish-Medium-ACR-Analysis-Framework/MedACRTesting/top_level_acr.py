@@ -91,7 +91,7 @@ class TopLevel:
         if True not in [x in folder for x in self.foldersToExclude]:
             input_data = get_dicom_files(os.path.join(self.mainPath, folder))
 
-            """
+
             stTask = ACRSliceThickness(
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
@@ -104,27 +104,26 @@ class TopLevel:
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
             
-            """
             unifTask = ACRUniformity(
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
-
-
+            
             """
             resTask = ACRSpatialResolution(
                 input_data=input_data, report_dir=outputFolder, report=True, MediumACRPhantom=True
             )
             """
 
-            #stResults = stTask.run()
-            #snrResults = snrTask.run()
-            #geomResults = geomTask.run()
+
+            stResults = stTask.run()
+            snrResults = snrTask.run()
+            geomResults = geomTask.run()
             unifResults = unifTask.run()
             #resResults = resTask.run()
             
-            stResults = None
-            snrResults = None
-            geomResults = None
+            #stResults = None
+            #snrResults = None
+            #geomResults = None
             #unifResults = None
             resResults = None
 
