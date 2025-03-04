@@ -34,7 +34,7 @@ class ACRSNR(HazenTask):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ACR_obj = ACRObject(self.dcm_list,kwargs)
+        self.ACR_obj = ACRObject(self.dcm_list)
         # measured slice width is expected to be a floating point number
         try:
             self.measured_slice_width = float(kwargs["measured_slice_width"])
@@ -59,7 +59,7 @@ class ACRSNR(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Identify relevant slice
-        snr_dcm = self.ACR_obj.dcm_list[4]
+        snr_dcm = self.ACR_obj.dcms[4]
         # Initialise results dictionary
         results = self.init_result_dict()
 
@@ -78,12 +78,14 @@ class ACRSNR(HazenTask):
                     "centre y": row,
                     "centre x": col
                 }
+                print(f"SNR calculated for {self.img_desc(snr_dcm)}")
+
             except Exception as e:
                 print(
                     f"Could not calculate the SNR for {self.img_desc(snr_dcm)} because of : {e}"
                 )
-                traceback.print_exc(file=sys.stdout)
-                raise Exception(e)
+                # traceback.print_exc(file=sys.stdout)
+
         # SUBTRACTION METHOD
         else:
             # Get the absolute path to all FILES found in the directory provided
@@ -109,8 +111,7 @@ class ACRSNR(HazenTask):
                     f"Could not calculate the SNR for {self.img_desc(snr_dcm)} and "
                     f"{self.img_desc(snr_dcm2)} because of : {e}"
                 )
-                traceback.print_exc(file=sys.stdout)
-                raise Exception(e)
+                # traceback.print_exc(file=sys.stdout)
 
         # only return reports if requested
         if self.report:
@@ -164,7 +165,7 @@ class ACRSNR(HazenTask):
             np.array: pixel array of the filtered image
         """
         #a = dcm.pixel_array.astype("int")
-        a = apply_modality_lut(dcm.pixel_array,dcm).astype('int') 
+        a = apply_modality_lut(dcm.pixel_array,dcm).astype('int')
         # filter size = 9, following MATLAB code and McCann 2013 paper for head coil, although note McCann 2013
         # recommends 25x25 for body coil.
         filtered_array = ndimage.uniform_filter(a, 9, mode="constant")
@@ -183,7 +184,7 @@ class ACRSNR(HazenTask):
             np.array: pixel array representing the image noise
         """
         #a = dcm.pixel_array.astype("int")
-        a = apply_modality_lut(dcm.pixel_array,dcm).astype('int') 
+        a = apply_modality_lut(dcm.pixel_array,dcm).astype('int')
 
         # Convolve image with boxcar/uniform kernel
         imsmoothed = self.filtered_image(dcm)
@@ -264,7 +265,7 @@ class ACRSNR(HazenTask):
         """
         centre = self.ACR_obj.centre
         col, row = centre
-        
+
         noise_img = self.get_noise_image(dcm)
 
         signal = [
@@ -288,7 +289,7 @@ class ACRSNR(HazenTask):
 
         if self.report:
             import matplotlib.pyplot as plt
-            
+
             fig, axes = plt.subplots(2, 1)
             fig.set_size_inches(8, 16)
             fig.tight_layout(pad=4)
@@ -308,6 +309,7 @@ class ACRSNR(HazenTask):
                 os.path.join(self.report_path, f"{self.img_desc(dcm)}_smoothing.png")
             )
             fig.savefig(img_path)
+            plt.close()
             self.report_files.append(img_path)
 
         return snr, normalised_snr, [round(elem,1) for elem in signal], [round(elem, 2) for elem in noise], col, row

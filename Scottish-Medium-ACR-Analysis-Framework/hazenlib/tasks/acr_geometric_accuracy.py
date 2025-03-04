@@ -40,7 +40,7 @@ class ACRGeometricAccuracy(HazenTask):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ACR_obj = ACRObject(self.dcm_list,kwargs)
+        self.ACR_obj = ACRObject(self.dcm_list)
 
     def run(self) -> dict:
         """Main function for performing geometric accuracy measurement
@@ -64,12 +64,13 @@ class ACRGeometricAccuracy(HazenTask):
                 "Horizontal distance": round(lengths_1[0], 2),
                 "Vertical distance": round(lengths_1[1], 2),
             }
+            print(f"Geometric accuracy calculated for {self.img_desc(slice1_dcm)}.")
+
         except Exception as e:
             print(
                 f"Could not calculate the geometric accuracy for {self.img_desc(slice1_dcm)} because of : {e}"
             )
-            traceback.print_exc(file=sys.stdout)
-            raise Exception(e)
+            # traceback.print_exc(file=sys.stdout)
 
         try:
             lengths_5 = self.get_geometric_accuracy_slice5(slice5_dcm)
@@ -79,12 +80,13 @@ class ACRGeometricAccuracy(HazenTask):
                 "Diagonal distance SW": round(lengths_5[2], 2),
                 "Diagonal distance SE": round(lengths_5[3], 2),
             }
+            print(f"Geometric accuracy calculated for {self.img_desc(slice5_dcm)}.")
+
         except Exception as e:
             print(
                 f"Could not calculate the geometric accuracy for {self.img_desc(slice5_dcm)} because of : {e}"
             )
-            traceback.print_exc(file=sys.stdout)
-            raise Exception(e)
+            # traceback.print_exc(file=sys.stdout)
 
         L = lengths_1 + lengths_5
 
@@ -143,10 +145,10 @@ class ACRGeometricAccuracy(HazenTask):
 
             axes[1].imshow(mask)
             axes[1].set_title("Thresholding Result")
-            
+
             axes[2].imshow(img)
             axes[2].imshow(mask,alpha=0.4)
-            #Bug Fix: The arrow width should be 0 not 1 
+            #Bug Fix: The arrow width should be 0 not 1
             axes[2].arrow(
                 length_dict["Horizontal Extent"][0],
                 cxy[1],
@@ -179,8 +181,9 @@ class ACRGeometricAccuracy(HazenTask):
                 os.path.join(self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png")
             )
             fig.savefig(img_path)
+            plt.close()
             self.report_files.append(img_path)
-        
+
         return length_dict["Horizontal Distance"], length_dict["Vertical Distance"]
 
     def get_geometric_accuracy_slice5(self, dcm):
@@ -271,6 +274,7 @@ class ACRGeometricAccuracy(HazenTask):
             )
             fig.savefig(img_path)
             self.report_files.append(img_path)
+            plt.close()
 
         return (
             length_dict["Horizontal Distance"],

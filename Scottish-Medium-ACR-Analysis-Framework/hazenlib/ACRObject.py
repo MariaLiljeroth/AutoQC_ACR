@@ -26,10 +26,10 @@ class ACRObject:
 
         # Initialise an ACR object from a stack of images of the ACR phantom
         self.dcm_list = dcm_list
-        
+
         # Load files as DICOM and their pixel arrays into 'images'
         self.images, self.dcms = self.sort_images()
-        
+
         # Store the pixel spacing value from the first image (expected to be the same for all)
         if "PixelSpacing" in self.dcms[0]:
             self.pixel_spacing = self.dcms[0].PixelSpacing
@@ -44,13 +44,13 @@ class ACRObject:
 
         # Determine whether image rotation is necessary
         self.rot_angle = self.determine_rotation()
-        
+
         # Store the DCM object of slice 7 as it is used often
         self.slice7_dcm = self.dcms[6]
-        
+
         # Find the centre coordinates of the phantom (circle)
         self.centre, self.radius = self.find_phantom_center(self.images[4])
-        
+
         # Store a mask image of slice 7 for reusability
         self.mask_image = self.get_mask_image(self.images[6])
 
@@ -164,11 +164,12 @@ class ACRObject:
         ]
 
         if detected_circles[0] is None and detected_circles[1] is not None:
-            print("Performing slice order inversion to restore correct slice order.")
+            # print("Performing slice order inversion to restore correct slice order.")
             self.images.reverse()
             self.dcms.reverse()
         else:
-            print("Slice order inversion not required.")
+            pass
+            # print("Slice order inversion not required.")
 
     def LR_orientation_checks(self):
         # Find center of potentially x-axis inverted image.
@@ -231,13 +232,14 @@ class ACRObject:
 
         # LR orientation swap if required
         if meanL < meanR:
-            print("Performing LR orientation swap to restore correct view.")
+            # print("Performing LR orientation swap to restore correct view.")
             flipped_images = [np.fliplr(image) for image in self.images]
             for index, dcm in enumerate(self.dcms):
                 dcm.PixelData = flipped_images[index].tobytes()
             self.images = flipped_images
         else:
-            print("LR orientation swap not required.")
+            pass
+            # print("LR orientation swap not required.")
 
     def determine_rotation(self):
         """

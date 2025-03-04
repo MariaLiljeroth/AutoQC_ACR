@@ -294,30 +294,12 @@ class ACRSliceThickness(HazenTask):
 
         return slice_thickness
 
-    @staticmethod
-    def place_lines(img: np.ndarray) -> list[SignalLine]:
+    def place_lines(self, img: np.ndarray) -> list[SignalLine]:
         """Places the signal lines within the central insert of the ACR phantom.
         Returns a list of line objects representing the placed lines."""
 
-        # Enhance contrast, otsu threshold and binarize
-        clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
-        img_contrastEnhanced = clahe.apply(img)
-        _, img_binary = cv2.threshold(
-            img_contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        # Find contour of insert - could potentially improve by handling each side individually using Hough Transform?
-        contours, _ = cv2.findContours(
-            img_binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
-        )
-
-        contours = sorted(
-            contours,
-            key=lambda cont: abs(np.max(cont[:, 0, 0]) - np.min(cont[:, 0, 0])),
-            reverse=True,
-        )
-        insertContour = contours[1]
-        insertContour = np.intp(cv2.boxPoints(cv2.minAreaRect(insertContour)))
+        ramps_insert = self.ACR_obj.find_ramps_insert(img)
+        insertContour = np.intp(cv2.boxPoints(cv2.minAreaRect(ramps_insert)))
         insertCorners = [Point(coords) for coords in insertContour]
 
         # Offset points by 1/3 of distance to nearest point, towards that point
