@@ -107,29 +107,34 @@ class TaskLooperRSCH:
         self.check_for_unsupported_tasks(tasks)
         self.cache_manager = CacheManager(self.APP_NAME)
 
-        if not pull_from_cache:
-            StrUtils.print_break(20)
+        # handling IO folder logic
+        StrUtils.print_break(20)
+        if pull_from_cache:
+            print("Attempting to pull previous results from cache.")
+            self.folder_io = self.cache_manager.load_cache("folder_io")
+        else:
+            print("Asking user to select top-level I/O folders.")
             self.folder_io = self.FolderIO()
             self.folder_io.run()
-            self.all_keys = self.generate_keys_dict()
-
             StrUtils.print_break(20)
+        self.all_keys = self.generate_keys_dict()
+
+        # Handling results generation logic
+        if pull_from_cache:
+            self.results = self.cache_manager.load_cache("results")
+            StrUtils.print_break(20)
+        else:
             print("Running Hazen tasks.")
             self.task_runner = self.TaskRunner(outer=self)
             self.results = self.task_runner.run()
             StrUtils.print_break(20)
-            
             print("Storing results in cache.")
+            self.cache_manager.store_cache(self.folder_io, "folder_io")
             self.cache_manager.store_cache(self.results, "results")
-            self.cache_manager.store_cache(self.all_keys, "all_keys")
-            StrUtils.print_break(20)
-        else:
-            StrUtils.print_break(20)
-            print("Pulling results from cache.")
-            self.results, self.all_keys = self.cache_manager.load_cache("results"), self.cache_manager.load_cache("all_keys")
             StrUtils.print_break(20)
 
-        self.excel_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputTestHazen.xlsx")
+        # handling results creation logic
+        self.excel_path = os.path.join(self.folder_io.out_top, "output_AutoQC_ACR.xlsx")
         self.df_creator = self.DataFrameCreator(outer=self)
         self.df_creator.run(self.excel_path)
 
@@ -137,6 +142,7 @@ class TaskLooperRSCH:
         self.excel_formatter.run(self.excel_path)
         print(f"Results successfully stored at: {self.excel_path}")
         StrUtils.print_break(20)
+
 
     def check_for_unsupported_tasks(self, tasks):
         key_check = [task in Mappings.TASK_TO_CLASS for task in tasks]
