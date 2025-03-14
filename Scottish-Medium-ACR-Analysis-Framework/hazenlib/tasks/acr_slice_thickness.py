@@ -81,8 +81,6 @@ class ACRSliceThickness(HazenTask):
             peaks, props = find_peaks(
                 smoothed.y, height=0, prominence=np.max(smoothed.y).item() / 4
             )
-            if len(peaks) == 0:
-                raise Exception("Signal detected across line of unknown shape.")
             heights = props["peak_heights"]
             peak = peaks[np.argmax(heights)]
 
@@ -149,6 +147,7 @@ class ACRSliceThickness(HazenTask):
             result = self.get_slice_thickness(slice_thickness_dcm)
             results["measurement"] = {"slice width mm": round(result, 2)}
             print(f"Slice thickness calculated for {self.img_desc(slice_thickness_dcm)}." )
+
         except Exception as e:
             print(
                 f"Could not calculate the slice thickness for {self.img_desc(slice_thickness_dcm)} because of : {e}"
@@ -173,11 +172,13 @@ class ACRSliceThickness(HazenTask):
         """
         img = dcm.pixel_array
         interp_factor = 4
+        interp_pixel_mm = [dist/interp_factor for dist in self.ACR_obj.pixel_spacing]
         img = cv2.resize(img, tuple([interp_factor * dim for dim in img.shape]), interpolation=cv2.INTER_CUBIC)
 
         lines = self.place_lines(img)
         for line in lines:
             line.get_FWHM()
+            line.FWHM *= np.mean(interp_pixel_mm)
         slice_thickness = 0.2 * (lines[0].FWHM * lines[1].FWHM) / (lines[0].FWHM + lines[1].FWHM)
 
         if self.report:

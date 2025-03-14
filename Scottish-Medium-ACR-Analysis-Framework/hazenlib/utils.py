@@ -18,7 +18,7 @@ P = TypeVar("P", bound="Point")
 L = TypeVar("L", bound="Line")
 xy = TypeVar("xy", bound="XY")
 
-def sortDICOMs(mainPath: str | pathlib.Path):
+def sortDICOMs(mainPath: Union[str, pathlib.Path]):
     """
     Description
     ------
@@ -225,7 +225,7 @@ def get_slice_thickness(dcm: pydicom.Dataset) -> float:
     return slice_thickness
 
 
-def get_pixel_size(dcm: pydicom.Dataset) -> (float, float):
+def get_pixel_size(dcm: pydicom.Dataset) -> tuple[float, float]:
     manufacturer = get_manufacturer(dcm)
     try:
         if is_enhanced_dicom(dcm):
@@ -591,6 +591,11 @@ class Line:
         self.end = args[1]
         self.midpoint = (self.start + self.end) / 2
 
+    @property
+    def length(self):
+        """Property for length of line"""
+        return np.sqrt((self.start.x - self.end.x)**2 + (self.start.y - self.end.y)**2)
+
     def get_signal(self, refImg: np.ndarray) -> None:
         """Gets signal across line using pixel values from reference image
 
@@ -603,7 +608,9 @@ class Line:
             src=self.start[::-1].astype(int).tolist(),
             dst=self.end[::-1].astype(int).tolist(),
         )
-        self.signal = XY(range(len(signal)), signal)
+
+        # multiply x by correction factor to ensure that sampled points are a distance of one pixel apart
+        self.signal = XY(range(len(signal)) * self.length/len(signal), signal)
 
     def get_subline(self, perc: Union[int, float]) -> L:
         """Returns a "subline" of self.

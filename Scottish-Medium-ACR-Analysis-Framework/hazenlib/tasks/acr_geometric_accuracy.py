@@ -44,37 +44,22 @@ class ACRGeometricAccuracy(HazenTask):
 
     def run(self) -> dict:
         """Main function for performing geometric accuracy measurement
-        using the first and fifth slices from the ACR phantom image set
+        using the fifth slice from the ACR phantom image set
 
         Returns:
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
 
         # Identify relevant slices
-        slice1_dcm = self.ACR_obj.dcms[0]
         slice5_dcm = self.ACR_obj.dcms[4]
 
         # Initialise results dictionary
         results = self.init_result_dict()
-        results["file"] = [self.img_desc(slice1_dcm), self.img_desc(slice5_dcm)]
-
-        try:
-            lengths_1 = self.get_geometric_accuracy_slice1(slice1_dcm)
-            results["measurement"][self.img_desc(slice1_dcm)] = {
-                "Horizontal distance": round(lengths_1[0], 2),
-                "Vertical distance": round(lengths_1[1], 2),
-            }
-            print(f"Geometric accuracy calculated for {self.img_desc(slice1_dcm)}.")
-
-        except Exception as e:
-            print(
-                f"Could not calculate the geometric accuracy for {self.img_desc(slice1_dcm)} because of : {e}"
-            )
-            # traceback.print_exc(file=sys.stdout)
+        results["file"] = [self.img_desc(slice5_dcm)]
 
         try:
             lengths_5 = self.get_geometric_accuracy_slice5(slice5_dcm)
-            results["measurement"][self.img_desc(slice5_dcm)] = {
+            results["measurement"] = {
                 "Horizontal distance": round(lengths_5[0], 2),
                 "Vertical distance": round(lengths_5[1], 2),
                 "Diagonal distance SW": round(lengths_5[2], 2),
@@ -87,27 +72,6 @@ class ACRGeometricAccuracy(HazenTask):
                 f"Could not calculate the geometric accuracy for {self.img_desc(slice5_dcm)} because of : {e}"
             )
             # traceback.print_exc(file=sys.stdout)
-
-        L = lengths_1 + lengths_5
-
-        mean_err, max_err, cov_l = self.distortion_metric(L)
-
-        #This bit was to do the Sag distortion but it's not really needed if we aquire in all axis, will leave it in anyway
-        if (self.ACR_obj.LocalisierDCM!=None):
-            try:
-                SagLengths = self.get_geometric_accuracy_Sag(self.ACR_obj.LocalisierDCM)
-            except Exception as e:
-                print(
-                    f"Could not calculate the geometric accuracy for sag direction because of : {e}"
-                )
-                traceback.print_exc(file=sys.stdout)
-                raise Exception(e)
-
-        results["measurement"]["distortion"] = {
-            "Mean relative measurement error": round(mean_err, 2),
-            "Max absolute measurement error": round(max_err, 2),
-            "Coefficient of variation %": round(cov_l, 2),
-        }
 
         # only return reports if requested
         if self.report:

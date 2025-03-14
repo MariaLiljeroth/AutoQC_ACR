@@ -58,14 +58,14 @@ class ACRUniformity(HazenTask):
                 "max pos": max_pos,
                 "min pos": min_pos
                 }
-        
+            print(f"Percentage integral uniformity calculated for {self.img_desc(self.ACR_obj.slice7_dcm)}")
+
         except Exception as e:
             print(
                 f"Could not calculate the percent integral uniformity for"
                 f"{self.img_desc(self.ACR_obj.slice7_dcm)} because of : {e}"
             )
-            traceback.print_exc(file=sys.stdout)
-            raise Exception(e)
+            # traceback.print_exc(file=sys.stdout)
 
         # only return reports if requested
         if self.report:
@@ -156,9 +156,9 @@ class ACRUniformity(HazenTask):
                 mean_array[row, col] = mean_val
 
             return mean_array
-        
+
         min_data = uniformity_iterator(min_image, base_mask, min_rows, min_cols)
-        max_data = uniformity_iterator(max_image, base_mask, max_rows, max_cols)     
+        max_data = uniformity_iterator(max_image, base_mask, max_rows, max_cols)
 
 
         if np.all(min_data==0) == 0 and np.all(max_data==0)  == 0: #if the array is all 0s skip
@@ -166,7 +166,7 @@ class ACRUniformity(HazenTask):
             sig_min = np.min(min_data[np.nonzero(min_data)])
             max_loc = np.where(max_data == sig_max)
             min_loc = np.where(min_data == sig_min)
-        else: #If the image doenst give a nice blob (like the ACR wants, revert to jsut a asliding window approach which should work regardless of the noise) but its not really the ACR way...        
+        else: #If the image doenst give a nice blob (like the ACR wants, revert to jsut a asliding window approach which should work regardless of the noise) but its not really the ACR way...
             print("Warning: Reverting to sliding window over whole image, this sometimes happens when there is quite noisy images!")
             rows, cols = np.nonzero(img_masked)[0], np.nonzero(img_masked)[1]
             mean_array = np.zeros(img_masked.shape)
@@ -178,11 +178,11 @@ class ACRUniformity(HazenTask):
                     coords[0] + centre[0] - cxy[0] - d_void,
                     coords[1] + centre[1] - cxy[1],
                 ]
-                values = img_masked[translate_mask[0], translate_mask[1]]
+                values = img_masked[tuple(translate_mask)]
                 if np.count_nonzero(values==0) ==0: #Incase we clip out of hte mask so lets just dont include those bits (ie we have areas of 0 signal)... (ie 1cm^2 must be completely in the large ROI)
                     mean_val = np.mean(values)
                     mean_array[row, col] = mean_val
-            
+
             sig_max = np.max(mean_array)
             sig_min = np.min(mean_array[np.nonzero(mean_array)]) #We initalise the array with 0s but we don't acccept any 0s in the above. Hence we should just ignore 0s here.
 
@@ -255,6 +255,7 @@ class ACRUniformity(HazenTask):
                 os.path.join(self.report_path, f"{self.img_desc(dcm)}_uniformity.png")
             )
             fig.savefig(img_path)
+            plt.close()
             self.report_files.append(img_path)
 
         return piu, sig_max, sig_min, max_loc, min_loc
