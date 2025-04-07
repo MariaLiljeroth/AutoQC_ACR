@@ -78,11 +78,11 @@ class ACRSNR(HazenTask):
                     "centre y": row,
                     "centre x": col
                 }
-                print(f"SNR calculated for {self.img_desc(snr_dcm)}")
+                print(f"{self.img_desc(snr_dcm)}: SNR calculated.")
 
             except Exception as e:
                 print(
-                    f"Could not calculate the SNR for {self.img_desc(snr_dcm)} because of : {e}"
+                    f"{self.img_desc(snr_dcm)}: Could not calculate SNR because of: {e}"
                 )
                 # traceback.print_exc(file=sys.stdout)
 

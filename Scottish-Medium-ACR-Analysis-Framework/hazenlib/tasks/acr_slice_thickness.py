@@ -146,11 +146,11 @@ class ACRSliceThickness(HazenTask):
         try:
             result = self.get_slice_thickness(slice_thickness_dcm)
             results["measurement"] = {"slice width mm": round(result, 2)}
-            print(f"Slice thickness calculated for {self.img_desc(slice_thickness_dcm)}." )
+            print(f"{self.img_desc(slice_thickness_dcm)}: Calculated slice thickness." )
 
         except Exception as e:
             print(
-                f"Could not calculate the slice thickness for {self.img_desc(slice_thickness_dcm)} because of : {e}"
+                f"{self.img_desc(slice_thickness_dcm)}: Could not calculate slice thickness because of: {e}"
             )
             # traceback.print_exc(file=sys.stdout)
 

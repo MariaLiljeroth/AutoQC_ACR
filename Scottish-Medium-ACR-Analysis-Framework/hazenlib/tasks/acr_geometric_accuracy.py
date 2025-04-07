@@ -55,7 +55,7 @@ class ACRGeometricAccuracy(HazenTask):
 
         # Initialise results dictionary
         results = self.init_result_dict()
-        results["file"] = [self.img_desc(slice5_dcm)]
+        results["file"] = self.img_desc(slice5_dcm)
 
         try:
             lengths_5 = self.get_geometric_accuracy_slice5(slice5_dcm)
@@ -65,11 +65,11 @@ class ACRGeometricAccuracy(HazenTask):
                 "Diagonal distance SW": round(lengths_5[2], 2),
                 "Diagonal distance SE": round(lengths_5[3], 2),
             }
-            print(f"Geometric accuracy calculated for {self.img_desc(slice5_dcm)}.")
+            print(f"{self.img_desc(slice5_dcm)}: Geometric accuracy calculated.")
 
         except Exception as e:
             print(
-                f"Could not calculate the geometric accuracy for {self.img_desc(slice5_dcm)} because of : {e}"
+                f"{self.img_desc(slice5_dcm)}: Could not calculate geometric accuracy because of: {e}"
             )
             # traceback.print_exc(file=sys.stdout)
 
@@ -79,7 +79,7 @@ class ACRGeometricAccuracy(HazenTask):
 
         return results
 
-    def get_geometric_accuracy_Sag(self,dcm):
+    def get_geometric_accuracy_Sag(self, dcm):
         pass
 
     def get_geometric_accuracy_slice1(self, dcm):
@@ -111,8 +111,8 @@ class ACRGeometricAccuracy(HazenTask):
             axes[1].set_title("Thresholding Result")
 
             axes[2].imshow(img)
-            axes[2].imshow(mask,alpha=0.4)
-            #Bug Fix: The arrow width should be 0 not 1
+            axes[2].imshow(mask, alpha=0.4)
+            # Bug Fix: The arrow width should be 0 not 1
             axes[2].arrow(
                 length_dict["Horizontal Extent"][0],
                 cxy[1],
@@ -142,7 +142,9 @@ class ACRGeometricAccuracy(HazenTask):
             axes[2].set_title("Geometric Accuracy for Slice 1")
 
             img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png")
+                os.path.join(
+                    self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png"
+                )
             )
             fig.savefig(img_path)
             plt.close()
@@ -183,7 +185,7 @@ class ACRGeometricAccuracy(HazenTask):
             axes[1].set_title("Thresholding Result")
 
             axes[2].imshow(img)
-            axes[2].imshow(mask,alpha=0.4)
+            axes[2].imshow(mask, alpha=0.4)
             axes[2].arrow(
                 length_dict["Horizontal Extent"][0],
                 cxy[1],
@@ -234,7 +236,9 @@ class ACRGeometricAccuracy(HazenTask):
             axes[2].set_title("Geometric Accuracy for Slice 5")
 
             img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png")
+                os.path.join(
+                    self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png"
+                )
             )
             fig.savefig(img_path)
             self.report_files.append(img_path)
@@ -257,13 +261,13 @@ class ACRGeometricAccuracy(HazenTask):
         Returns:
             tuple of dictionaries: _description_
         """
-        #res = self.ACR_obj.pixel_spacing
-        if 'PixelSpacing' in dcm:
+        # res = self.ACR_obj.pixel_spacing
+        if "PixelSpacing" in dcm:
             res = dcm.PixelSpacing  # In-plane resolution from metadata
         else:
             import hazenlib.utils
-            res = hazenlib.utils.GetDicomTag(dcm,(0x28,0x30))
 
+            res = hazenlib.utils.GetDicomTag(dcm, (0x28, 0x30))
 
         eff_res = np.sqrt(np.mean(np.square(res)))
         img_rotate = skimage.transform.rotate(img, 45, center=(cxy[0], cxy[1]))
@@ -325,7 +329,6 @@ class ACRGeometricAccuracy(HazenTask):
         cov_l = 100 * np.std(L) / np.mean(L)
 
         return mean_err, max_err, cov_l
-
 
     @staticmethod
     def distortion_metric_MedPhantom(L):

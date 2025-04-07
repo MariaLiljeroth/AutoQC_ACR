@@ -58,12 +58,11 @@ class ACRUniformity(HazenTask):
                 "max pos": max_pos,
                 "min pos": min_pos
                 }
-            print(f"Percentage integral uniformity calculated for {self.img_desc(self.ACR_obj.slice7_dcm)}")
+            print(f"{self.img_desc(self.ACR_obj.slice7_dcm)}: Percentage integral uniformity calculated.")
 
         except Exception as e:
             print(
-                f"Could not calculate the percent integral uniformity for"
-                f"{self.img_desc(self.ACR_obj.slice7_dcm)} because of : {e}"
+                f"{self.img_desc(self.ACR_obj.slice7_dcm)}: Could not calculate percentage integral uniformity because of: {e}"
             )
             # traceback.print_exc(file=sys.stdout)
 
@@ -144,8 +143,8 @@ class ACRUniformity(HazenTask):
             for idx, (row, col) in enumerate(zip(rows, cols)):
                 centre = [row, col]
                 translate_mask = [
-                    np.int0(coords[0] + centre[0] - cxy[0] - d_void),
-                    np.int0(coords[1] + centre[1] - cxy[1]),
+                    np.intp(coords[0] + centre[0] - cxy[0] - d_void),
+                    np.intp(coords[1] + centre[1] - cxy[1]),
                 ]
                 values = masked_image[translate_mask[0], translate_mask[1]]
                 if np.count_nonzero(values) < np.count_nonzero(sample_mask):

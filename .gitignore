@@ -1,2 +1,5 @@
 Scottish-Medium-ACR-Analysis-Framework/MedACRTesting/TestData NC/
 *.xlsx
+*.pyc
+top_level_running/docs/
+top_level_running/.conda/

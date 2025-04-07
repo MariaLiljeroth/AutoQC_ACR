@@ -220,8 +220,8 @@ class ACRObject:
             return points
 
         # Split bbox into two along short edge
-        boxL = np.int0(points_from_boundingRect(x, y, w / 2, h))
-        boxR = np.int0(points_from_boundingRect(x + w / 2, y, w / 2, h))
+        boxL = np.intp(points_from_boundingRect(x, y, w / 2, h))
+        boxR = np.intp(points_from_boundingRect(x + w / 2, y, w / 2, h))
 
         # Find the mean pixel value within each smaller rect
         maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(np.uint8)

@@ -18,63 +18,6 @@ P = TypeVar("P", bound="Point")
 L = TypeVar("L", bound="Line")
 xy = TypeVar("xy", bound="XY")
 
-def sortDICOMs(mainPath: Union[str, pathlib.Path]):
-    """
-    Description
-    ------
-    Groups the DICOM files within the selected directory into folders - one series per folder
-    Excludes certain Series Descriptions.
-    """
-
-    if isinstance(mainPath, str):
-        mainPath = pathlib.Path(mainPath)
-    elif isinstance(pathlib.Path):
-        pass
-    else:
-        raise TypeError("Function arg should be str or pathlib.Path")
-
-    fileList = [item for item in mainPath.rglob("*") if item.is_file()]
-    SD_exclude = ["loc", "zip"]
-
-    # Sort each file individually
-    print("Please wait, sorting DICOMs.")
-    for file in fileList:
-        fileName = os.path.split(file)[1]
-
-        # Get SeriesDescription tag
-        dcmData = pydicom.dcmread(file)
-        sDescrip = dcmData.SeriesDescription
-
-        # Move to Excluded Images folder if it doesn't need processing.
-        if True in [x in sDescrip.lower() for x in SD_exclude]:
-            folderPath = os.path.join(str(mainPath), "_Excluded Images")
-            if not os.path.exists(folderPath):
-                os.makedirs(folderPath)
-
-            os.rename(file, folderPath + "/" + fileName)
-            continue
-
-        # If ND put in ND Images Folder.
-        if sDescrip.lower()[-2:] == "nd":
-            folderPath = os.path.join(str(mainPath), "_ND Images")
-            if not os.path.exists(folderPath):
-                os.makedirs(folderPath)
-
-            subFolderPath = os.path.join(folderPath, sDescrip)
-            if not os.path.exists(subFolderPath):
-                os.makedirs(subFolderPath)
-
-            os.rename(file, os.path.join(subFolderPath, fileName))
-            continue
-
-        # Otherwise process the image.
-        folderPath = os.path.join(str(mainPath), sDescrip)
-        if not os.path.exists(folderPath):
-            os.makedirs(folderPath)
-
-        os.rename(file, os.path.join(folderPath, fileName))
-
-
 def GetDicomTag(dcm, tag):
     for elem in dcm.iterall():
         if elem.tag == tag:
