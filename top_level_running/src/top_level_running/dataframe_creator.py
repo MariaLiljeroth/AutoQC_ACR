@@ -142,7 +142,6 @@ class DataFrameCreator:
             )
             for quad in lengths
         ]
-        print(perc_diffs_and_cvs)
         perc_diffs, cvs = zip(*perc_diffs_and_cvs)
 
         to_add = pd.DataFrame(

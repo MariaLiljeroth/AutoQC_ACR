@@ -54,13 +54,13 @@ class FolderManager:
         return out_parent
 
     def sort_in_parent(self) -> list[Path]:
-        in_children = [p for p in self.in_parent.iterdir() if p.is_dir()]
+        existing_in_children = [p for p in self.in_parent.iterdir() if p.is_dir()]
 
-        if len(in_children) == 0:
+        if len(existing_in_children) == 0:
             print("Please wait, sorting dicoms...")
             self.sort_dcms_into_dirs(self.in_parent)
 
-        elif all([p.is_dir() for p in in_children]):
+        elif all([p.is_dir() for p in existing_in_children]):
             print("Dicoms already sorted.")
 
         else:
@@ -69,14 +69,16 @@ class FolderManager:
 
         # Filter out the folders that don't have 11 images inside
         # ND images also filtered out
-        in_children = [
-            p
-            for p in self.in_parent.iterdir()
-            if p.is_dir()
-            and len(list(p.iterdir())) == 11
-            and "nd" not in p.name.lower()
-        ]
-
+        in_children = []
+        ignored = self.in_parent / "ignored"
+        for p in [x for x in self.in_parent.iterdir() if x.is_dir()]:
+            if len(list(p.iterdir())) == 11 and "nd" not in p.name.lower():
+                in_children.append(p)
+            else:
+                if not ignored.exists():
+                    ignored.mkdir()
+                p.rename(ignored / p.name)
+                
         return in_children
 
     @staticmethod
@@ -85,12 +87,9 @@ class FolderManager:
 
         # Sort each file individually
         for file in file_list:
-
-            # Get SeriesDescription tag
             dcmData = pydicom.dcmread(file)
             sDescrip = dcmData.SeriesDescription
 
-            # Otherwise process the image.
             target_folder = in_parent.joinpath(sDescrip)
             target_folder.mkdir(exist_ok=True)
             file.rename(target_folder.joinpath(file.name))

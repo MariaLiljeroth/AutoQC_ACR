@@ -50,6 +50,7 @@ dependencies:
       - scikit-image==0.24.0
       - scipy==1.13.1
       - six==1.17.0
+      - thefuzz==0.22.1
       - tifffile==2024.8.30
       - tzdata==2025.2
       - xlsxwriter==3.2.2
