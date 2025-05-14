@@ -3,9 +3,9 @@ from tkinter import ttk
 
 import threading
 
-from shared.context import AVAILABLE_TASKS
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from backend.run_tasks import run_tasks
+from backend.construct_dataframe import DataFrameConstructor
 
 
 class FrameTaskRunner(tk.Frame):
@@ -92,10 +92,16 @@ class FrameTaskRunner(tk.Frame):
         threading.Thread(target=run_tasks, args=(self.task_args,)).start()
 
     def handle_event(self, event):
-        if isinstance(event, tuple) and event[0] == "UPDATE: PROGRESS BAR TASKS":
-            if self.prep_bar_running:
-                self.progress_bar_prep.stop()
-                self.progress_bar_prep.config(mode="determinate")
-                self.progress_bar_prep["value"] = 100
-                self.prep_bar_running = False
-            self.progress_bar_tasks["value"] += event[1]
+        if event[0] == "PROGRESS_BAR_UPDATE":
+            if event[1] == "TASK_RUNNING":
+                if self.prep_bar_running:
+                    self.progress_bar_prep.stop()
+                    self.progress_bar_prep.config(mode="determinate")
+                    self.progress_bar_prep["value"] = 100
+                    self.prep_bar_running = False
+                self.progress_bar_tasks["value"] += event[2]
+
+        if event[0] == "TASK_COMPLETE":
+            if event[1] == "TASK_RUNNING":
+                dc = DataFrameConstructor(event[2], self.out_dir)
+                threading.Thread(target=dc.run).start()

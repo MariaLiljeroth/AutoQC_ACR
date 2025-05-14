@@ -3,7 +3,7 @@ import multiprocessing as mp
 from backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
 from backend.smaaf.hazenlib.utils import get_dicom_files
 from backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
-from shared.global_queue import get_queue
+from shared.queueing import get_queue
 from shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
 
 
@@ -23,18 +23,13 @@ def run_tasks(task_args):
         pool.join()
 
     formatted_results = nested_dict()
-    for outer_list in results:
-        for inner_dict in outer_list:
-            print(inner_dict)
-            print(CLASS_STR_TO_TASK)
-            task_key = CLASS_STR_TO_TASK[inner_dict["task"]]
-            coil_key = substring_matcher(inner_dict["file"], EXPECTED_COILS)
-            orientation_key = substring_matcher(
-                inner_dict["file"], EXPECTED_ORIENTATIONS
-            )
-            formatted_results[task_key][coil_key][orientation_key] = inner_dict
+    for subdict in results:
+        task_key = CLASS_STR_TO_TASK[subdict["task"]]
+        coil_key = substring_matcher(subdict["file"], EXPECTED_COILS)
+        orientation_key = substring_matcher(subdict["file"], EXPECTED_ORIENTATIONS)
+        formatted_results[task_key][coil_key][orientation_key] = subdict
     formatted_results = defaultdict_to_dict(formatted_results)
-    print(formatted_results)
+    get_queue().put(("TASK_COMPLETE", "TASK_RUNNING", formatted_results))
 
 
 def run_solo_task_on_folder(in_subdir, out_subdir, task, queue, perc):
@@ -45,5 +40,5 @@ def run_solo_task_on_folder(in_subdir, out_subdir, task, queue, perc):
         MediumACRPhantom=True,
     )
     result = task_obj.run()
-    queue.put(("UPDATE: PROGRESS BAR TASKS", perc))
+    queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
     return result
