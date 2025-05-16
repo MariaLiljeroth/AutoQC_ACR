@@ -1,8 +1,5 @@
-src/Scottish-Medium-ACR-Analysis-Framework/
-
 *.xlsx
 *.pyc
 .conda/
 .vscode/
 docs/
-top_level_running/.conda/
