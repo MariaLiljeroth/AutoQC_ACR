@@ -24,21 +24,35 @@ def run_tasks(task_args):
 
     formatted_results = nested_dict()
     for subdict in results:
+        file_value = subdict["file"]
+
         task_key = CLASS_STR_TO_TASK[subdict["task"]]
-        coil_key = substring_matcher(subdict["file"], EXPECTED_COILS)
-        orientation_key = substring_matcher(subdict["file"], EXPECTED_ORIENTATIONS)
+        coil_key = substring_matcher(
+            file_value[0] if isinstance(file_value, list) else file_value,
+            EXPECTED_COILS,
+        )
+        orientation_key = substring_matcher(
+            file_value[0] if isinstance(file_value, list) else file_value,
+            EXPECTED_ORIENTATIONS,
+        )
         formatted_results[task_key][coil_key][orientation_key] = subdict
     formatted_results = defaultdict_to_dict(formatted_results)
     get_queue().put(("TASK_COMPLETE", "TASK_RUNNING", formatted_results))
 
 
 def run_solo_task_on_folder(in_subdir, out_subdir, task, queue, perc):
-    task_obj = TASK_STR_TO_CLASS[task](
-        input_data=get_dicom_files(in_subdir.resolve()),
-        report_dir=out_subdir.resolve(),
-        report=True,
-        MediumACRPhantom=True,
-    )
+    snr_helper = in_subdir / "helper_data_set"
+    kwargs = {
+        "input_data": get_dicom_files(in_subdir.resolve()),
+        "report_dir": out_subdir.resolve(),
+        "report": True,
+        "MediumACRPhantom": True,
+    }
+
+    if task == "SNR" and snr_helper.exists():
+        kwargs["subtract"] = snr_helper
+
+    task_obj = TASK_STR_TO_CLASS[task](**kwargs)
     result = task_obj.run()
     queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
     return result

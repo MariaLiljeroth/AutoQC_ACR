@@ -2,4 +2,4 @@
 *.pyc
 .conda/
 .vscode/
-docs/
+test_data/

@@ -8,7 +8,7 @@ from shared.context import AVAILABLE_TASKS
 from shared.queueing import get_queue
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from frontend.progress_bar_modal import ProgressBarModal
-from backend.sort_dicoms import sort_dicoms
+from backend.sort_dicoms import DicomSorter
 
 
 class FrameConfig(tk.Frame):
@@ -223,7 +223,8 @@ class FrameConfig(tk.Frame):
                 str((self.in_dir.parent / "AutoQC_ACR_Output").resolve()),
             )
             self.modal_progress = ProgressBarModal(self, "Checking for DICOMs")
-            threading.Thread(target=sort_dicoms, args=(self.in_dir,)).start()
+            ds = DicomSorter(self.in_dir)
+            threading.Thread(target=ds.run).start()
 
     def _browse_out_dir(self):
         """Asks user to choose an output directory for results.

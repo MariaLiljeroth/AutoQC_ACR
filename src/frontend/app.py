@@ -63,7 +63,6 @@ class App(tk.Tk):
         try:
             while True:
                 event = get_queue().get_nowait()
-                print(event)
                 if event[0] == "SWITCH_FRAME":
                     # Frame switching event.
                     # Possible to pass args from caller frame to new frame through event[2]

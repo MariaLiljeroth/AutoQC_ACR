@@ -64,30 +64,46 @@ class DataFrameConstructor:
             return slice_thicknesses, perc_diff_to_set
 
         elif task == "SNR":
-            snr_norm_pairs = (
+
+            def pull_snr_values(smoothing: bool = True):
+                snr_norm_pairs = (
+                    [
+                        self.chained_get(
+                            task,
+                            coil,
+                            orientation,
+                            "measurement",
+                            f"snr by {'smoothing' if smoothing else 'subtraction'}",
+                            "measured",
+                        ),
+                        self.chained_get(
+                            task,
+                            coil,
+                            orientation,
+                            "measurement",
+                            f"snr by {'smoothing' if smoothing else 'subtraction'}",
+                            "normalised",
+                        ),
+                    ]
+                    for orientation in EXPECTED_ORIENTATIONS
+                )
+                snr, normalised_snr = zip(*snr_norm_pairs)
+                return list(snr), list(normalised_snr)
+
+            # Try to pull snr values using smoothing key
+            snr, normalised_snr = pull_snr_values()
+            # If all values are N/A, try to pull using subtraction key
+            if all(
                 [
-                    self.chained_get(
-                        task,
-                        coil,
-                        orientation,
-                        "measurement",
-                        "snr by smoothing",
-                        "measured",
-                    ),
-                    self.chained_get(
-                        task,
-                        coil,
-                        orientation,
-                        "measurement",
-                        "snr by smoothing",
-                        "normalised",
-                    ),
+                    x
+                    == inspect.signature(self.chained_get).parameters["default"].default
+                    for x in snr + normalised_snr
                 ]
-                for orientation in EXPECTED_ORIENTATIONS
-            )
-            snr, normalised_snr = zip(*snr_norm_pairs)
-            snr = self.make_row("Image SNR", list(snr))
-            normalised_snr = self.make_row("Normalised SNR", list(normalised_snr))
+            ):
+                snr, normalised_snr = pull_snr_values(smoothing=False)
+
+            snr = self.make_row("Image SNR", snr)
+            normalised_snr = self.make_row("Normalised SNR", normalised_snr)
             return snr, normalised_snr
 
         elif task == "Geometric Accuracy":
