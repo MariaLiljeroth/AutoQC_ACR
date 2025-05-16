@@ -6,6 +6,8 @@ from openpyxl.cell.cell import Cell
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from shared.queueing import get_queue
+
 
 class DataFrameFormatter:
 
@@ -16,3 +18,7 @@ class DataFrameFormatter:
     def run(self):
         workbook = load_workbook(self.excel_path)
         self.worksheet = workbook.active
+
+        # Add dataframe formatting here
+
+        get_queue().put(("TASK_COMPLETE", "DATAFRAME_FORMATTED"))

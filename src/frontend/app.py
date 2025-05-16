@@ -57,13 +57,13 @@ class App(tk.Tk):
         frame.tkraise()
 
     def _check_queue(self):
-        """Initialises queue checking for events. If SWITCH_FRAME
-        event is detected, visible frame is switched. Otherwise, event
-        is passed to self.current_frame for local processing.
+        """Initialises queue checking for events. App-level events are immediately handled.
+        Otherwise, event is passed to self.current_frame for local processing.
         """
         try:
             while True:
                 event = get_queue().get_nowait()
+                print(event)
                 if event[0] == "SWITCH_FRAME":
                     # Frame switching event.
                     # Possible to pass args from caller frame to new frame through event[2]
@@ -74,6 +74,9 @@ class App(tk.Tk):
                         args_to_pass = []
                     frame_class = self.FRAME_MAP[frame_name]
                     self.show_frame(frame_class, *args_to_pass)
+                elif event[0] == "QUIT_APPLICATION":
+                    self.destroy()
+                    sys.exit()
                 else:
                     # Pass event to current visible frame
                     self.current_frame.handle_event(event)
