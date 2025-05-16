@@ -6,5 +6,5 @@ AVAILABLE_TASKS = [
     "Spatial Resolution",
 ]
 
-EXPECTED_ORIENTATIONS = ["Sag", "Ax", "Cor"]
+EXPECTED_ORIENTATIONS = ["Ax", "Sag", "Cor"]
 EXPECTED_COILS = ["IB", "HN", "Flex"]

@@ -5,7 +5,8 @@ import threading
 
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from backend.run_tasks import run_tasks
-from backend.construct_dataframe import DataFrameConstructor
+from backend.dataframe_tools.dataframe_constructor import DataFrameConstructor
+from backend.dataframe_tools.dataframe_formatter import DataFrameFormatter
 
 
 class FrameTaskRunner(tk.Frame):
@@ -103,5 +104,13 @@ class FrameTaskRunner(tk.Frame):
 
         if event[0] == "TASK_COMPLETE":
             if event[1] == "TASK_RUNNING":
-                dc = DataFrameConstructor(event[2], self.out_dir)
-                threading.Thread(target=dc.run).start()
+                dfc = DataFrameConstructor(
+                    event[2], self.out_dir / "Results_AutoQC_ACR.xlsx"
+                )
+                threading.Thread(target=dfc.run).start()
+
+            elif event[1] == "DATAFRAME_CONSTRUCTED":
+                dff = DataFrameFormatter(
+                    event[2], self.out_dir / "Results_AutoQC_ACR.xlsx"
+                )
+                threading.Thread(target=dff.run).start()
