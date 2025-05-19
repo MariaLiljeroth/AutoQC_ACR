@@ -184,8 +184,8 @@ class ACRUniformity(HazenTask):
             for idx, (row, col) in enumerate(zip(rows, cols)):
                 centre = [row, col]
                 translate_mask = [
-                    coords[0] + centre[0] - cxy[0] - d_void,
-                    coords[1] + centre[1] - cxy[1],
+                    np.intp(coords[0] + centre[0] - cxy[0] - d_void),
+                    np.intp(coords[1] + centre[1] - cxy[1]),
                 ]
                 values = img_masked[tuple(translate_mask)]
                 if (

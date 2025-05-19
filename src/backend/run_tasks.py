@@ -15,7 +15,9 @@ def run_tasks(task_args):
     ]
 
     cpu_cores = mp.cpu_count()
-    pool = mp.Pool(processes=cpu_cores // 2)
+    pool = mp.Pool(
+        processes=cpu_cores // 2 if len(task_args_with_queue) > cpu_cores // 2 else 1
+    )
     try:
         results = pool.starmap(run_solo_task_on_folder, task_args_with_queue)
     finally:

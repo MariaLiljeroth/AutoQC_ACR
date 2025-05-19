@@ -2,4 +2,4 @@
 *.pyc
 .conda/
 .vscode/
-test_data/
+nc_testing/
