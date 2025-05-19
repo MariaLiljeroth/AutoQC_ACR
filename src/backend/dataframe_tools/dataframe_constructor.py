@@ -1,15 +1,32 @@
-import numpy as np
-import pandas as pd
 from pathlib import Path
 from itertools import chain
 import inspect
+
+import numpy as np
+import pandas as pd
+
 from shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
 from shared.queueing import get_queue
 
 
 class DataFrameConstructor:
+    """Class to construct pandas DataFrame from taskrunner results and save to Excel.
 
-    def __init__(self, results, excel_path: Path):
+    Instance attributes:
+        width_df (int): DataFrame width, from number of expected orientations.
+        blank_row (pd.DataFrame): Template blank row for DataFrame.
+        orientations_header (pd.DataFrame): Header row with all three orientations.
+        results (dict): Organised results from task running.
+        excel_path (Path): Path to save the Excel file.
+    """
+
+    def __init__(self, results: dict, excel_path: Path):
+        """Initialises DataFrameConstructor.
+
+        Args:
+            results (dict): Organised results from task running.
+            excel_path (Path): Path to save the Excel file.
+        """
         self.width_df = len(EXPECTED_ORIENTATIONS) + 1
         self.blank_row = self.make_row(np.nan)
         self.orientations_header = self.make_row(np.nan, EXPECTED_ORIENTATIONS)
@@ -17,11 +34,14 @@ class DataFrameConstructor:
         self.excel_path = excel_path
 
     def run(self):
+        """Constructs the DataFrame and saves it to an Excel file."""
+        # Get list of dataframes for each task.
         tasks = {k for k in self.results.keys()}
         task_headers = [self.make_row(task.upper()) for task in tasks]
         task_dfs = [self.construct_df_for_task(task) for task in tasks]
         blank_rows = [self.blank_row for _ in range(len(tasks))]
 
+        # Interleave the task headers, dataframes, and blank rows and concat.
         master_df = pd.concat(
             chain.from_iterable(zip(task_headers, task_dfs, blank_rows))
         )
@@ -30,12 +50,33 @@ class DataFrameConstructor:
         )
         get_queue().put(("TASK_COMPLETE", "DATAFRAME_CONSTRUCTED", master_df))
 
-    def construct_df_for_task(self, task):
+    def construct_df_for_task(self, task: str) -> pd.DataFrame:
+        """Constructs a DataFrame for a specific task.
+
+        Args:
+            task (str): Task to construct DataFrame for.
+
+        Returns:
+            pd.DataFrame: Constructed DataFrame for the task.
+        """
         coil_dfs = [self.construct_df_for_coil(task, coil) for coil in EXPECTED_COILS]
         blank_rows = [self.blank_row for _ in range(len(coil_dfs))]
         return pd.concat(list(chain.from_iterable(zip(coil_dfs, blank_rows)))[:-1])
 
-    def construct_df_for_coil(self, task, coil):
+    def construct_df_for_coil(self, task: str, coil: str) -> pd.DataFrame:
+        """Constructs a DataFrame for a specific coil and task.
+        Task-specific data is retrieved here.
+
+        Args:
+            task (str): Task to construct DataFrame for.
+            coil (str): Coil to construct DataFrame for.
+
+        Returns:
+            pd.DataFrame: Constructed DataFrame for the coil and task.
+        """
+
+        # Get task specific data and convert to list if it's a DataFrame.
+        # This is required so can unpack list properly in concat operation.
         task_specific_data = self.get_task_specific_data(task, coil)
         if isinstance(task_specific_data, pd.DataFrame):
             task_specific_data = [task_specific_data]
@@ -47,7 +88,17 @@ class DataFrameConstructor:
         ]
         return pd.concat(to_concat)
 
-    def get_task_specific_data(self, task, coil):
+    def get_task_specific_data(self, task: str, coil: str) -> list[pd.DataFrame]:
+        """Retrieves task-specific data for a given task and coil from the results dict.
+        Additional task-specific results are calculated here.
+
+        Args:
+            task (str): Task to retrieve data for.
+            coil (str): Coil to retrieve data for.
+
+        Returns:
+            list[pd.DataFrame]: Dataframes containing task-specific data.
+        """
         if task == "Slice Thickness":
             slice_thicknesses = [
                 self.chained_get(
@@ -155,14 +206,35 @@ class DataFrameConstructor:
             uniformity = self.make_row("% Integral Uniformity", uniformity)
             return uniformity
 
-    def make_row(self, label: str, values: list = None):
+    def make_row(self, label: str, values: list = None) -> pd.DataFrame:
+        """Returns a DataFrame with a single row containing passed label and values.
+        If values is None, a blank row is used in place of values.
+
+        Args:
+            label (str): Label for the DataFrame.
+            values (list, optional): Values to display to the right of label. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Dataframe containing label and values.
+        """
+
         if not isinstance(values, (type(None), list)):
             raise TypeError("values attr should be list.")
         if values is None:
             values = [np.nan for _ in range(self.width_df - 1)]
         return pd.DataFrame([label] + values).T
 
-    def chained_get(self, *keys, default="N/A"):
+    def chained_get(self, *keys, default="N/A") -> any:
+        """Safe getter for nested results dict.
+        Iterates through keys and returns the value at the end of the chain if it exists.
+        Otherwise, returns the default value.
+
+        Args:
+            default (str, optional): Default parameter if key chain fails. Defaults to "N/A".
+
+        Returns:
+            any: Value at the end of the key chain or default value.
+        """
         d = self.results.copy()
         for key in keys:
             if isinstance(d, dict):

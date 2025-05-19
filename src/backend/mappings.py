@@ -5,6 +5,7 @@ from backend.smaaf.hazenlib.tasks.acr_uniformity import ACRUniformity
 from backend.smaaf.hazenlib.tasks.acr_spatial_resolution import ACRSpatialResolution
 from shared.context import AVAILABLE_TASKS
 
+# Lists of specific string-string and string-class mappings for use throughout backend.
 CLASSES = [
     ACRSliceThickness,
     ACRSNR,

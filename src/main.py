@@ -1,10 +1,4 @@
-"""
-File: main.py
-Author: Nathan Crossley
-
-Description:
-This script is the entry point for AutoQC_ACR. An instance of the frontend App class is created and run
-"""
+# This script is the entry point for AutoQC_ACR. An instance of the frontend App class is created and run
 
 import sys
 from pathlib import Path

@@ -6,9 +6,21 @@ from backend.utils import quick_check_dicom
 
 
 class DicomSorter:
-    """Class representing the DICOM sorting process."""
+    """Class representing the DICOM sorting process.
+
+    Instance attributes:
+        dir (Path): Directory containing DICOM files.
+        uid_suffix_mapper (dict[str, str]): Dictionary mapping SeriesInstanceUID to suffixes.
+            Useful for Siemens scanners with duplicate data sets (see SNR by subtraction)
+        tracked_sDescrips (list[str]): List of SeriesDescription values that have been tracked.
+    """
 
     def __init__(self, dir: Path):
+        """Initialises the DicomSorter class.
+
+        Args:
+            dir (Path): Directory containing DICOM files to sort.
+        """
         self.dir = dir
         self.uid_suffix_mapper = {}
         self.tracked_sDescrips = []
@@ -17,7 +29,7 @@ class DicomSorter:
         """Entry function for running DICOM sorting process"""
         self.dcms = self.get_valid_DICOMs()
         for dcm in self.dcms:
-            # get UID and SeriesDescription tags and populate trackers.
+            # get UID and SeriesDescription tags and populate trackers/mappers.
             metadata = pydicom.dcmread(dcm)
             uid, sDescrip = metadata.SeriesInstanceUID, metadata.SeriesDescription
             self.populate_uid_suffix_mapper(uid, sDescrip)
@@ -30,6 +42,7 @@ class DicomSorter:
             )
             target_folder.mkdir(exist_ok=True)
             dcm.rename(target_folder / dcm.name)
+            # Send update to queue for progress bar visuals.
             get_queue().put(
                 ("PROGRESS_BAR_UPDATE", "DICOM_SORTING", 1 / len(self.dcms) * 100)
             )

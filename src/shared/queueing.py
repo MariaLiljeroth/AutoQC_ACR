@@ -9,7 +9,7 @@ def get_queue() -> BaseProxy:
     """Returns a multiprocessing queue to be used globally throughout application.
 
     Returns:
-        BaseProxy: _description_
+        BaseProxy: Centralised multiprocessing queue to handle events throughout frontend and backend.
     """
     global queue
     if queue is None:
