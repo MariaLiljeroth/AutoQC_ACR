@@ -22,6 +22,10 @@ class App(tk.Tk):
     def __init__(self):
         """Initialises the App class, displays configuration frame
         and initialises queue checking.
+
+        Instance attributes:
+            frames (dict): Dictionary of frame instances.
+            current_frame (tk.Frame): Currently displayed frame.
         """
         super().__init__()
         self.geometry(f"+5+5")

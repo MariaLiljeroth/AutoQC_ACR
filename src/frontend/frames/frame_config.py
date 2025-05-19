@@ -15,6 +15,17 @@ class FrameConfig(tk.Frame):
     """Subclass of tk.Frame.
     For the user to configure settings for AutoQC_ACR application.
 
+    Instance attributes:
+        frames (dict[str, tk.Frame]): Dictionary of frame widgets.
+        labels (dict[str, tk.Label]): Dictionary of label widgets.
+        entries (dict[str, tk.Entry]): Dictionary of entry widgets.
+        listboxes (dict[str, tk.Listbox]): Dictionary of listbox widgets.
+        scrollbars (dict[str, tk.Scrollbar]): Dictionary of scrollbar widgets.
+        checkbuttons (dict[str, dict[str, list[tk.Checkbutton | tk.BooleanVar]]]): Dictionary of checkbutton widgets and associated boolean vars.
+        buttons (dict[str, tk.Button]): Dictionary of button widgets.
+        modal_progress (ProgressBarModal): Progress bar modal for displaying progress during DICOM checking and sorting tasks.
+        in_dir (Path): Input directory selected by the user.
+
     Class attributes:
         GRID_DIMS (tuple): A tuple of expected grid dimensions for tk.widget.grid()
         PAD_X (tuple): Standardised x-padding between grid columns.
@@ -25,7 +36,12 @@ class FrameConfig(tk.Frame):
     PAD_X = (0, 10)
     PAD_Y = (0, 15)
 
-    def __init__(self, master):
+    def __init__(self, master: tk.Tk):
+        """Initialises FrameConfig instance. Creates, configures and lays out widgets.
+
+        Args:
+            master (tk.Tk): Root window of tk application.
+        """
         super().__init__(master)
 
         self._create_widgets()
@@ -35,147 +51,169 @@ class FrameConfig(tk.Frame):
         self.modal_progress = None
 
     def _create_widgets(self):
-        """Lays out widgets within self."""
-        # Frames
-        self.frame_task_checkboxes = tk.Frame(self, bd=1, relief=tk.SOLID)
-
-        # Labels
-        self.label_title = tk.Label(
-            self,
-            text="Configuration Settings",
-            font=FONT_TITLE,
-            anchor="w",
-        )
-        self.label_in_dir = tk.Label(self, text="Input directory:", font=FONT_TEXT)
-        self.label_out_dir = tk.Label(self, text="Output directory:", font=FONT_TEXT)
-        self.label_select_subdirs = tk.Label(
-            self,
-            text="Select subdirectories\nto process:",
-            font=FONT_TEXT,
-            justify=tk.LEFT,
-        )
-        self.label_select_tasks = tk.Label(
-            self, text="Select tasks to run:", font=FONT_TEXT
-        )
-
-        # Entries
-        self.entry_in_dir = tk.Entry(self, font=FONT_TEXT)
-        self.entry_out_dir = tk.Entry(self, font=FONT_TEXT)
-
-        # Listboxes
-        self.listbox_subdirs = tk.Listbox(
-            self,
-            selectmode=tk.EXTENDED,
-            font=FONT_TEXT,
-            selectforeground="black",
-            selectbackground="lightgray",
-            bd=1,
-            relief=tk.SOLID,
-        )
-
-        # Scrollbars
-        self.scrollbar_subdirs = tk.Scrollbar(
-            self,
-            orient=tk.VERTICAL,
-            width=20,
-            bd=2,
-            relief=tk.SOLID,
-            command=self.listbox_subdirs.yview,
-        )
-
-        # Checkboxes
-        self.task_checkboxes_vars = [tk.BooleanVar(value=True) for _ in AVAILABLE_TASKS]
-        self.task_checkboxes = [
-            tk.Checkbutton(
-                self.frame_task_checkboxes,
-                text=task_name,
+        """Creates widgets"""
+        self.frames = {"task_checkbuttons": tk.Frame(self, bd=1, relief=tk.SOLID)}
+        self.labels = {
+            "title": tk.Label(
+                self,
+                text="Configuration Settings",
+                font=FONT_TITLE,
+                anchor="w",
+            ),
+            "in_dir": tk.Label(self, text="Input directory:", font=FONT_TEXT),
+            "out_dir": tk.Label(self, text="Output directory:", font=FONT_TEXT),
+            "select_subdirs": tk.Label(
+                self,
+                text="Select subdirectories\nto process:",
                 font=FONT_TEXT,
-                variable=var,
+                justify=tk.LEFT,
+            ),
+            "select_tasks": tk.Label(self, text="Select tasks to run:", font=FONT_TEXT),
+        }
+        self.entries = {
+            "in_dir": tk.Entry(self, font=FONT_TEXT),
+            "out_dir": tk.Entry(self, font=FONT_TEXT),
+        }
+        self.listboxes = {
+            "subdirs": tk.Listbox(
+                self,
+                selectmode=tk.EXTENDED,
+                font=FONT_TEXT,
+                selectforeground="black",
+                selectbackground="lightgray",
+                bd=1,
+                relief=tk.SOLID,
             )
-            for var, task_name in zip(self.task_checkboxes_vars, AVAILABLE_TASKS)
-        ]
+        }
+        self.scrollbars = {
+            "subdirs": tk.Scrollbar(
+                self,
+                orient=tk.VERTICAL,
+                width=20,
+                bd=2,
+                relief=tk.SOLID,
+                command=self.listboxes["subdirs"].yview,
+            )
+        }
 
-        # Buttons
-        self.button_browse_in_dir = tk.Button(
-            self,
-            text="Browse",
-            font=FONT_TEXT,
-            command=self._browse_in_dir,
-            bd=1,
-            relief=tk.SOLID,
-        )
-        self.button_browse_out_dir = tk.Button(
-            self,
-            text="Browse",
-            font=FONT_TEXT,
-            command=self._browse_out_dir,
-            bd=1,
-            relief=tk.SOLID,
-        )
-        self.button_run = tk.Button(
-            self,
-            text="Run AutoQC_ACR",
-            font=FONT_TEXT,
-            command=self._read_config_settings,
-            bd=1,
-            relief=tk.SOLID,
-        )
+        bool_vars_tasks = [tk.BooleanVar(value=True) for _ in AVAILABLE_TASKS]
+        self.checkbuttons = {
+            "tasks": {
+                "checkbuttons": [
+                    tk.Checkbutton(
+                        self.frames["task_checkbuttons"],
+                        text=task_name,
+                        font=FONT_TEXT,
+                        variable=var,
+                    )
+                    for var, task_name in zip(bool_vars_tasks, AVAILABLE_TASKS)
+                ],
+                "bool_vars": bool_vars_tasks,
+            },
+        }
+
+        self.buttons = {
+            "browse_in_dir": tk.Button(
+                self,
+                text="Browse",
+                font=FONT_TEXT,
+                command=self._browse_in_dir,
+                bd=1,
+                relief=tk.SOLID,
+            ),
+            "browse_out_dir": tk.Button(
+                self,
+                text="Browse",
+                font=FONT_TEXT,
+                command=self._browse_out_dir,
+                bd=1,
+                relief=tk.SOLID,
+            ),
+            "run": tk.Button(
+                self,
+                text="Run AutoQC_ACR",
+                font=FONT_TEXT,
+                command=self._read_config_settings,
+                bd=1,
+                relief=tk.SOLID,
+            ),
+        }
 
     def _configure_widgets(self):
         """Configures widgets."""
-        self.listbox_subdirs.config(yscrollcommand=self.scrollbar_subdirs.set)
+        self.listboxes["subdirs"].config(yscrollcommand=self.scrollbars["subdirs"].set)
 
     def _layout_widgets(self):
-        """Lays out widgets in self."""
-        # Column 0
-        self.label_title.grid(
-            row=0,
-            column=0,
-            columnspan=self.GRID_DIMS[0],
-            sticky="w",
-            pady=self.PAD_Y,
-        )
-        self.label_in_dir.grid(
-            row=1, column=0, sticky="w", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.label_out_dir.grid(
-            row=2, column=0, sticky="w", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.label_select_subdirs.grid(
-            row=3, column=0, sticky="nw", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.label_select_tasks.grid(
-            row=4, column=0, sticky="nw", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.button_run.grid(
-            row=5, column=0, columnspan=self.GRID_DIMS[0], sticky="ew", padx=50
-        )
+        """Lays out widgets."""
+        for key, widget in self.labels.items():
+            if key == "title":
+                widget.grid(
+                    row=0,
+                    column=0,
+                    columnspan=self.GRID_DIMS[0],
+                    sticky="w",
+                    pady=self.PAD_Y,
+                )
+            elif key == "in_dir":
+                widget.grid(
+                    row=1, column=0, sticky="w", padx=self.PAD_X, pady=self.PAD_Y
+                )
+            elif key == "out_dir":
+                widget.grid(
+                    row=2, column=0, sticky="w", padx=self.PAD_X, pady=self.PAD_Y
+                )
+            elif key == "select_subdirs":
+                widget.grid(
+                    row=3, column=0, sticky="nw", padx=self.PAD_X, pady=self.PAD_Y
+                )
+            elif key == "select_tasks":
+                widget.grid(
+                    row=4, column=0, sticky="nw", padx=self.PAD_X, pady=self.PAD_Y
+                )
 
-        # Column 1
-        self.entry_in_dir.grid(
-            row=1, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.entry_out_dir.grid(
-            row=2, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.listbox_subdirs.grid(
-            row=3, column=1, sticky="nsew", padx=self.PAD_X, pady=self.PAD_Y
-        )
-        self.frame_task_checkboxes.grid(
-            row=4, column=1, sticky="nsw", padx=self.PAD_X, pady=self.PAD_Y
-        )
+        for key, widget in self.buttons.items():
+            if key == "browse_in_dir":
+                widget.grid(row=1, column=2, sticky="w", pady=self.PAD_Y)
+            elif key == "browse_out_dir":
+                widget.grid(row=2, column=2, sticky="w", pady=self.PAD_Y)
+            elif key == "run":
+                widget.grid(
+                    row=5, column=0, columnspan=self.GRID_DIMS[0], sticky="ew", padx=50
+                )
 
-        # Column 2
-        self.button_browse_in_dir.grid(row=1, column=2, sticky="w", pady=self.PAD_Y)
-        self.button_browse_out_dir.grid(row=2, column=2, sticky="w", pady=self.PAD_Y)
-        self.scrollbar_subdirs.grid(row=3, column=2, sticky="nsw", pady=self.PAD_Y)
+        for key, widget in self.frames.items():
+            if key == "task_checkbuttons":
+                widget.grid(
+                    row=4, column=1, sticky="nsw", padx=self.PAD_X, pady=self.PAD_Y
+                )
 
-        # Other layout
-        for task_checkbox in self.task_checkboxes:
-            task_checkbox.pack(anchor="w", padx=self.PAD_Y)
+        for key, widget in self.entries.items():
+            if key == "in_dir":
+                widget.grid(
+                    row=1, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
+                )
+            elif key == "out_dir":
+                widget.grid(
+                    row=2, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
+                )
+
+        for key, widget in self.listboxes.items():
+            if key == "subdirs":
+                widget.grid(
+                    row=3, column=1, sticky="nsew", padx=self.PAD_X, pady=self.PAD_Y
+                )
+
+        for key, widget in self.scrollbars.items():
+            if key == "subdirs":
+                widget.grid(row=3, column=2, sticky="nsw", pady=self.PAD_Y)
+
+        for key, widget in self.checkbuttons.items():
+            if key == "tasks":
+                for checkbutton in widget["checkbuttons"]:
+                    checkbutton.pack(anchor="w", padx=self.PAD_Y)
 
     def _configure_grid(self):
-        """Configures grid weights and min row/col sizes (within self)."""
+        """Configures grid weights and min row/col sizes for self."""
         self.columnconfigure(0, weight=0, minsize=0)
         self.columnconfigure(1, weight=1, minsize=400)
         self.columnconfigure(2, weight=0, minsize=0)
@@ -217,9 +255,11 @@ class FrameConfig(tk.Frame):
         """
         self.in_dir = Path(filedialog.askdirectory(title="Select Input Directory"))
         if self.in_dir:
-            self._populate_entry_widget(self.entry_in_dir, str(self.in_dir.resolve()))
             self._populate_entry_widget(
-                self.entry_out_dir,
+                self.entries["in_dir"], str(self.in_dir.resolve())
+            )
+            self._populate_entry_widget(
+                self.entries["out_dir"],
                 str((self.in_dir.parent / "AutoQC_ACR_Output").resolve()),
             )
             self.modal_progress = ProgressBarModal(self, "Checking for DICOMs")
@@ -232,29 +272,28 @@ class FrameConfig(tk.Frame):
         """
         out_dir = Path(filedialog.askdirectory(title="Select Output Directory"))
         if out_dir:
-            self._populate_entry_widget(self.entry_out_dir, str(out_dir.resolve()))
+            self._populate_entry_widget(self.entries["out_dir"], str(out_dir.resolve()))
 
     def _read_config_settings(self):
-        """Pulls configuration settings from widgets after performing validation checks
-        on relevant widgets. Sends a message to global queue to switch frame to
-        'TASKRUNNER' frame, also passing configuration settings.
+        """Pulls configuration settings from widgets after performing relevant validation checks.
+        Sends a message to global queue to switch frame to 'TASKRUNNER', also passing configuration settings.
         """
-        in_dir = Path(self.entry_in_dir.get())
+        in_dir = Path(self.entries["in_dir"].get())
         if str(in_dir) == "." or not in_dir.is_dir() or not in_dir.exists():
             tk.messagebox.showerror("Error", "Input directory is invalid!")
             return
 
         # Check for valid in_subdir selection
         in_subdirs = [
-            in_dir / self.listbox_subdirs.get(i)
-            for i in self.listbox_subdirs.curselection()
+            in_dir / self.listboxes["subdirs"].get(i)
+            for i in self.listboxes["subdirs"].curselection()
         ]
         if not in_subdirs:
             tk.messagebox.showerror("Error", "No subdirectories selected!")
             return
 
         # Check for valid out_dir selection
-        out_dir = Path(self.entry_out_dir.get())
+        out_dir = Path(self.entries["out_dir"].get())
         if str(out_dir) == "." or not in_dir.is_dir():
             tk.messagebox.showerror("Error", "Output directory is invalid!")
             return
@@ -284,9 +323,10 @@ class FrameConfig(tk.Frame):
 
         # Check that at least one task is selected
         tasks_to_run = [
-            task_checkbox.cget("text")
-            for task_checkbox, var in zip(
-                self.task_checkboxes, self.task_checkboxes_vars
+            check_button.cget("text")
+            for check_button, var in zip(
+                self.checkbuttons["tasks"]["checkbuttons"],
+                self.checkbuttons["tasks"]["bool_vars"],
             )
             if var.get() == 1
         ]
@@ -319,4 +359,6 @@ class FrameConfig(tk.Frame):
             elif event[1] == "DICOM_SORTING":
                 # destroys current progress bar window and populates listbox with subdirectories of input dir.
                 self.modal_progress.destroy()
-                self._populate_listbox_with_subdirs(self.listbox_subdirs, self.in_dir)
+                self._populate_listbox_with_subdirs(
+                    self.listboxes["subdirs"], self.in_dir
+                )
