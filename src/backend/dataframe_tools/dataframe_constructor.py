@@ -206,6 +206,24 @@ class DataFrameConstructor:
             uniformity = self.make_row("% Integral Uniformity", uniformity)
             return uniformity
 
+        elif task == "Spatial Resolution":
+            mtf50 = [
+                self.chained_get(task, coil, orientation, "measurement", "mtf50")
+                for orientation in EXPECTED_ORIENTATIONS
+            ]
+            spatial_res = [
+                (
+                    1 / mtf
+                    if isinstance(mtf, (int, float))
+                    else inspect.signature(self.chained_get)
+                    .parameters["default"]
+                    .default
+                )
+                for mtf in mtf50
+            ]
+            spatial_res = self.make_row("Spatial Resolution", spatial_res)
+            return spatial_res
+
     def make_row(self, label: str, values: list = None) -> pd.DataFrame:
         """Returns a DataFrame with a single row containing passed label and values.
         If values is None, a blank row is used in place of values.

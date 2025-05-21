@@ -48,7 +48,6 @@ class ACRSpatialResolution(HazenTask):
                 f"Could not calculate the spatial resolution for {self.img_desc(mtf_dcm)} because of : {e}"
             )
 
-        # only return reports if requested
         if self.report:
             results["report_image"] = self.report_files
 
