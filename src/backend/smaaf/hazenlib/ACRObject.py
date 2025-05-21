@@ -120,7 +120,8 @@ class ACRObject:
 
         img_stack = [dicom.pixel_array for dicom in dicom_stack]
         img_stack = [
-            apply_modality_lut(dicom.pixel_array, dicom).astype("uint16") for dicom in dicom_stack
+            apply_modality_lut(dicom.pixel_array, dicom).astype("uint16")
+            for dicom in dicom_stack
         ]
         return img_stack, dicom_stack
 
@@ -133,43 +134,15 @@ class ACRObject:
         This function analyzes the given set of images and their associated DICOM objects to determine if any
         adjustments are needed to restore the correct slice order.
         """
-        test_images = (self.images[0], self.images[-1])
-        dx = self.pixel_spacing[0]
-
-        normalised_images = [
-            cv2.normalize(
-                src=image,
-                dst=None,
-                alpha=0,
-                beta=255,
-                norm_type=cv2.NORM_MINMAX,
-                dtype=cv2.CV_8U,
-            )
-            for image in test_images
-        ]
-
-        # search for circle in first slice of ACR phantom dataset with radius of ~11mm
-        detected_circles = [
-            cv2.HoughCircles(
-                norm_image,
-                cv2.HOUGH_GRADIENT,
-                1,
-                param1=50,
-                param2=30,
-                minDist=int(180 / dx),
-                minRadius=int(10 / dx),
-                maxRadius=int(15 / dx),
-            )
-            for norm_image in normalised_images
-        ]
-
-        if detected_circles[0] is None and detected_circles[1] is not None:
-            # print("Performing slice order inversion to restore correct slice order.")
+        contour_bar = self.get_contour_bar(self.images[0])
+        _, (w, h), _ = cv2.minAreaRect(contour_bar)
+        if w < h:
+            w, h = h, w
+        if 140 <= w <= 180 and 7 <= h <= 13:
+            pass
+        else:
             self.images.reverse()
             self.dcms.reverse()
-        else:
-            pass
-            # print("Slice order inversion not required.")
 
     def LR_orientation_checks(self):
         # Find center of potentially x-axis inverted image.
@@ -185,7 +158,9 @@ class ACRObject:
         # Apply ring mask to image and dilate result.
         ring = np.zeros_like(img2)
         ring[ringMask] = img2[ringMask]
-        dilatedRing = cv2.dilate(ring, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)), 1)
+        dilatedRing = cv2.dilate(
+            ring, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)), 1
+        )
         dilatedRing = cv2.GaussianBlur(dilatedRing, (3, 3), 0, 0)
 
         # Combine two images.
@@ -195,7 +170,9 @@ class ACRObject:
         # Create binary modified image.
         clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
         contrastEnhanced = clahe.apply(img2Mod)
-        _, binary = cv2.threshold(contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, binary = cv2.threshold(
+            contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
 
         # Find contour of top L shape
         contours, _ = cv2.findContours(
@@ -224,8 +201,12 @@ class ACRObject:
         boxR = np.intp(points_from_boundingRect(x + w / 2, y, w / 2, h))
 
         # Find the mean pixel value within each smaller rect
-        maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(np.uint8)
-        maskR = cv2.fillPoly(np.zeros_like(img2), [boxR], (255, 255, 255)).astype(np.uint8)
+        maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(
+            np.uint8
+        )
+        maskR = cv2.fillPoly(np.zeros_like(img2), [boxR], (255, 255, 255)).astype(
+            np.uint8
+        )
 
         meanL = cv2.mean(img2, mask=maskL)
         meanR = cv2.mean(img2, mask=maskR)
@@ -312,6 +293,38 @@ class ACRObject:
 
         return centre, radius
 
+    @staticmethod
+    def get_contour_bar(img):
+        normalised = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        contrast_enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
+            normalised
+        )
+        _, thresholded = cv2.threshold(
+            contrast_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+
+        contours, _ = cv2.findContours(
+            thresholded.astype(np.uint8),
+            mode=cv2.RETR_TREE,
+            method=cv2.CHAIN_APPROX_NONE,
+        )
+
+        def get_aspect_ratio(contour):
+            _, (width, height), _ = cv2.minAreaRect(contour)
+            return min(width, height) / max(width, height)
+
+        # filter out tiny contours from noise
+        threshold_area = 15 * 15
+        filtered_contours = [
+            c for c in contours if cv2.contourArea(c) >= threshold_area
+        ]
+        # select central insert
+        contour_bar = sorted(
+            filtered_contours,
+            key=lambda c: get_aspect_ratio(c),
+        )[0]
+        return contour_bar
+
     def get_mask_image(self, image, mag_threshold=0.05, open_threshold=500):
         """Create a masked pixel array
         Mask an image by magnitude threshold before applying morphological opening to remove small unconnected
@@ -326,17 +339,27 @@ class ACRObject:
             np.array:
                 The masked image.
         """
-        test_mask = self.circular_mask(self.centre, (80 // self.pixel_spacing[0]), image.shape)
+        test_mask = self.circular_mask(
+            self.centre, (80 // self.pixel_spacing[0]), image.shape
+        )
 
         test_image = image * test_mask
         test_vals = test_image[np.nonzero(test_image)]
-        if np.percentile(test_vals, 80) - np.percentile(test_vals, 10) > 0.9 * np.max(image):
-            print("Large intensity variations detected in image. Using local thresholding!")
-            initial_mask = skimage.filters.threshold_sauvola(image, window_size=3, k=0.95)
+        if np.percentile(test_vals, 80) - np.percentile(test_vals, 10) > 0.9 * np.max(
+            image
+        ):
+            print(
+                "Large intensity variations detected in image. Using local thresholding!"
+            )
+            initial_mask = skimage.filters.threshold_sauvola(
+                image, window_size=3, k=0.95
+            )
         else:
             initial_mask = image > mag_threshold * np.max(image)
 
-        opened_mask = skimage.morphology.area_opening(initial_mask, area_threshold=open_threshold)
+        opened_mask = skimage.morphology.area_opening(
+            initial_mask, area_threshold=open_threshold
+        )
         final_mask = skimage.morphology.convex_hull_image(opened_mask)
 
         return final_mask
@@ -410,7 +433,9 @@ class ACRObject:
 
         vertical_start = (0, self.centre[0])
         vertical_end = (dims[1] - 1, self.centre[0])
-        vertical_line_profile = skimage.measure.profile_line(mask, vertical_start, vertical_end)
+        vertical_line_profile = skimage.measure.profile_line(
+            mask, vertical_start, vertical_end
+        )
         vertical_extent = np.nonzero(vertical_line_profile)[0]
         vertical_distance = (vertical_extent[-1] - vertical_extent[0]) * dy
 
@@ -480,7 +505,9 @@ class ACRObject:
         pk_heights = peaks[1]["peak_heights"]
         pk_ind = peaks[0]
 
-        peak_heights = pk_heights[(-pk_heights).argsort()[:n]]  # find n highest peak amplitudes
+        peak_heights = pk_heights[
+            (-pk_heights).argsort()[:n]
+        ]  # find n highest peak amplitudes
         peak_locs = pk_ind[(-pk_heights).argsort()[:n]]  # find n highest peak locations
 
         return np.sort(peak_locs), np.sort(peak_heights)

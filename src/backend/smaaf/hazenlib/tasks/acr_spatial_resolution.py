@@ -13,10 +13,11 @@ import cv2
 import matplotlib.pyplot as plt
 
 import numpy as np
-from scipy.fft import fft
 
-from scipy import optimize
+from scipy.fft import fft, fftfreq
+from scipy.optimize import curve_fit
 from scipy.special import sici
+from scipy.signal import savgol_filter
 
 
 class ACRSpatialResolution(HazenTask):
@@ -26,18 +27,36 @@ class ACRSpatialResolution(HazenTask):
     """
 
     TARGET_THETA_BAR = 3
-    SIZE_ROI = 15
+    SIZE_ROI = 10
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.ACR_obj = ACRObject(self.dcm_list, kwargs)
 
     def run(self):
-        self.img_orig = self.ACR_obj.images[0]
-        spatial_resolution = self.get_spatial_resolution()
+        mtf_dcm = self.ACR_obj.dcms[0]
+        results = self.init_result_dict()
+        results["file"] = self.img_desc(mtf_dcm)
 
-    def get_spatial_resolution(self):
-        self.roi, self.roi_centre = self.get_roi()
+        try:
+            mtf50 = self.get_mtf50(mtf_dcm)
+            results["measurement"] = {"mtf50": mtf50}
+            print(f"{self.img_desc(mtf_dcm)}: Spatial resolution calculated.")
+
+        except Exception as e:
+            print(
+                f"Could not calculate the spatial resolution for {self.img_desc(mtf_dcm)} because of : {e}"
+            )
+
+        # only return reports if requested
+        if self.report:
+            results["report_image"] = self.report_files
+
+        return results
+
+    def get_mtf50(self, dcm):
+        self.img_orig = dcm.pixel_array
+        self.roi, self.roi_centre, self.roi_bounds, self.img_rotated = self.get_roi()
 
         self.esf = self.get_esf_raw()
         self.esf_fitted = self.get_esf_fitted()
@@ -48,57 +67,93 @@ class ACRSpatialResolution(HazenTask):
         self.mtf = self.get_mtf(self.lsf)
         self.mtf_fitted = self.get_mtf(self.lsf_fitted)
 
-        plt.imshow(self.roi)
-        plt.show()
-        plt.scatter(self.esf[0], self.esf[1])
-        plt.show()
+        def simple_interpolate(target_y: float, y: list, x: list) -> float:
+            crossing_index = np.where(y < target_y)[0][0]
+            x1, x2 = x[crossing_index - 1], x[crossing_index]
+            y1, y2 = y[crossing_index - 1], y[crossing_index]
+            targetX = x1 + (target_y - y1) * (x2 - x1) / (y2 - y1)
+            return targetX
 
-    def get_roi(self, size_ROI: int = 15):
-        contour_bar = self.get_contour_bar(self.img_orig)
+        mtf50 = simple_interpolate(0.5, self.mtf_fitted[1], self.mtf_fitted[0])
+        mtf05 = simple_interpolate(0.005, self.mtf_fitted[1], self.mtf_fitted[0])
+
+        if self.report:
+            fig, axes = plt.subplots(4, 1, figsize=(8, 16))
+
+            DISPLAY_PAD = 20
+            x1_roi, x2_roi, y1_roi, y2_roi = self.roi_bounds
+            x1_display_frame = x1_roi - DISPLAY_PAD
+            x2_display_frame = x2_roi + DISPLAY_PAD
+            y1_display_frame = y1_roi - DISPLAY_PAD
+            y2_display_frame = y2_roi + DISPLAY_PAD
+
+            x1_roi_in_display = DISPLAY_PAD
+            x2_roi_in_display = x2_display_frame - x1_display_frame - DISPLAY_PAD
+            y1_roi_in_display = DISPLAY_PAD
+            y2_roi_in_display = y2_display_frame - y1_display_frame - DISPLAY_PAD
+
+            axes[0].imshow(
+                self.img_rotated[
+                    y1_display_frame:y2_display_frame, x1_display_frame:x2_display_frame
+                ],
+            )
+            axes[0].vlines(
+                [x1_roi_in_display, x2_roi_in_display],
+                y1_roi_in_display,
+                y2_roi_in_display,
+            )
+            axes[0].hlines(
+                [y1_roi_in_display, y2_roi_in_display],
+                x1_roi_in_display,
+                x2_roi_in_display,
+            )
+            axes[1].scatter(self.esf[0], self.esf[1], label="ESF")
+            axes[1].plot(self.esf_fitted[0], self.esf_fitted[1], label="ESF fitted")
+            axes[1].set_xlabel("Perpendicular distance from edge (mm)")
+            axes[1].set_ylabel("Pixel value")
+            axes[1].legend()
+
+            axes[2].scatter(self.lsf[0], self.lsf[1], label="LSF")
+            axes[2].plot(self.lsf_fitted[0], self.lsf_fitted[1], label="LSF fitted")
+            axes[2].set_xlabel("Perpendicular distance from edge (mm)")
+            axes[2].set_ylabel("Pixel value gradient")
+            axes[2].legend()
+
+            axes[3].scatter(self.mtf[0], self.mtf[1], label="MTF")
+            axes[3].plot(self.mtf_fitted[0], self.mtf_fitted[1], label="MTF fitted")
+            axes[3].set_xlabel("Spatial frequency (mm^-1)")
+            axes[3].set_ylabel("MTF")
+            axes[3].set_xlim(0, mtf05)
+            axes[3].legend()
+
+            img_path = os.path.realpath(
+                os.path.join(
+                    self.report_path,
+                    f"{self.img_desc(dcm)}_spatial_resolution.png",
+                )
+            )
+
+            fig.tight_layout()
+            fig.savefig(img_path, dpi=600)
+            plt.close()
+            self.report_files.append(img_path)
+
+        return mtf50
+
+    def get_roi(self):
+        contour_bar = self.ACR_obj.get_contour_bar(self.img_orig)
         img_rotated = self.rotate_rel_to_bar(contour_bar)
-        contour_bar_rotated = self.get_contour_bar(img_rotated)
+        contour_bar_rotated = self.ACR_obj.get_contour_bar(img_rotated)
         roi_centre = self.define_ROI_centre(contour_bar_rotated)
 
-        x1 = int(roi_centre[0] - size_ROI // 2)
-        x2 = int(roi_centre[0] + size_ROI // 2)
-        y1 = int(roi_centre[1] - size_ROI // 2)
-        y2 = int(roi_centre[1] + size_ROI // 2)
+        x1 = int(roi_centre[0] - self.SIZE_ROI // 2)
+        x2 = int(roi_centre[0] + self.SIZE_ROI // 2)
+        y1 = int(roi_centre[1] - self.SIZE_ROI // 2)
+        y2 = int(roi_centre[1] + self.SIZE_ROI // 2)
 
         roi = img_rotated[y1:y2, x1:x2]
 
-        return roi, roi_centre
-
-    @staticmethod
-    def get_contour_bar(img):
-        normalised = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        contrast_enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
-            normalised
-        )
-        _, thresholded = cv2.threshold(
-            contrast_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        contours, _ = cv2.findContours(
-            thresholded.astype(np.uint8),
-            mode=cv2.RETR_TREE,
-            method=cv2.CHAIN_APPROX_NONE,
-        )
-
-        def get_aspect_ratio(contour):
-            _, (width, height), _ = cv2.minAreaRect(contour)
-            return min(width, height) / max(width, height)
-
-        # filter out tiny contours from noise
-        threshold_area = 15 * 15
-        filtered_contours = [
-            c for c in contours if cv2.contourArea(c) >= threshold_area
-        ]
-        # select central insert
-        contour_bar = sorted(
-            filtered_contours,
-            key=lambda c: get_aspect_ratio(c),
-        )[0]
-        return contour_bar
+        return roi, roi_centre, (x1, x2, y1, y2), img_rotated
 
     def rotate_rel_to_bar(self, contour_bar) -> np.ndarray:
         _, (w, h), theta = cv2.minAreaRect(contour_bar)
@@ -179,7 +234,7 @@ class ACRSpatialResolution(HazenTask):
         def esf_func(x, c_1, c_2, alpha, m):
             return c_1 / np.pi * sici(alpha * np.pi * (x - m))[0] + c_1 / 2 + c_2
 
-        popt, _ = optimize.curve_fit(
+        popt, _ = curve_fit(
             esf_func,
             self.esf[0],
             self.esf[1],
@@ -199,17 +254,23 @@ class ACRSpatialResolution(HazenTask):
         return np.vstack([esf[0], np.gradient(esf[1], esf[0])])
 
     def get_mtf(self, lsf):
+        dx = np.mean(np.diff(lsf[0]))
         mtf = np.abs(fft(lsf[1]))
-        mtf /= np.max(mtf)
+        mtf /= mtf[0]
+
+        freqs = fftfreq(len(lsf[1]), dx)
+        pos = freqs > 0
+        mtf = np.vstack([freqs[pos], mtf[pos]])
+
         return mtf
 
 
-from tkinter import filedialog
+if __name__ == "__main__":
+    from tkinter import filedialog
 
-path = filedialog.askdirectory()
-obj = ACRSpatialResolution(input_data=get_dicom_files(path))
-obj.run()
-
+    path = filedialog.askdirectory()
+    obj = ACRSpatialResolution(input_data=get_dicom_files(path), report=True)
+    obj.run()
 
 # @classmethod
 # def get_res_matrix(cls, img):

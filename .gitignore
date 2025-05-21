@@ -3,3 +3,5 @@
 .conda/
 .vscode/
 nc_testing/
+docs/
+report_image/
