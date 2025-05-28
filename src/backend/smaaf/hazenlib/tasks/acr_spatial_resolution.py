@@ -55,7 +55,9 @@ class ACRSpatialResolution(HazenTask):
 
     def get_mtf50(self, dcm):
         self.img_orig = dcm.pixel_array
-        self.roi, self.roi_centre, self.roi_bounds, self.img_rotated = self.get_roi()
+        self.roi_centres = self.get_roi_centres()
+        self.roi_imgs = self.get_roi_imgs()
+        ######## up to here. above doesn't work.
 
         self.esf = self.get_esf_raw()
         self.esf_fitted = self.get_esf_fitted()
@@ -139,20 +141,39 @@ class ACRSpatialResolution(HazenTask):
 
         return mtf50
 
-    def get_roi(self):
+    def get_roi_centres(self):
         contour_bar = self.ACR_obj.get_contour_bar(self.img_orig)
         img_rotated = self.rotate_rel_to_bar(contour_bar)
         contour_bar_rotated = self.ACR_obj.get_contour_bar(img_rotated)
-        roi_centre = self.define_ROI_centre(contour_bar_rotated)
 
-        x1 = int(roi_centre[0] - self.SIZE_ROI // 2)
-        x2 = int(roi_centre[0] + self.SIZE_ROI // 2)
-        y1 = int(roi_centre[1] - self.SIZE_ROI // 2)
-        y2 = int(roi_centre[1] + self.SIZE_ROI // 2)
+        corners = np.intp(cv2.boxPoints(cv2.minAreaRect(contour_bar_rotated)))
+        test_point = corners[0]
+        endpoints = (
+            test_point,
+            sorted(
+                corners[1:],
+                key=lambda c: np.sqrt(np.sum((c - test_point) ** 2)),
+            )[1],
+        )
+        unit_vector = endpoints[-1] - endpoints[0]
 
-        roi = img_rotated[y1:y2, x1:x2]
+        def get_point_on_line(fraction_along_line):
+            return np.intp(endpoints[0] + unit_vector * fraction_along_line)
 
-        return roi, roi_centre, (x1, x2, y1, y2), img_rotated
+        centre_1 = get_point_on_line(3 / 8)
+        centre_2 = get_point_on_line(1 / 2)
+        centre_3 = get_point_on_line(5 / 8)
+
+        return centre_1, centre_2, centre_3
+
+    @classmethod
+    def get_image_in_roi(cls, img, roi_centre):
+        x_left = roi_centre[0] - cls.SIZE_ROI // 2
+        x_right = roi_centre[0] + cls.SIZE_ROI // 2
+        y_top = roi_centre[1] - cls.SIZE_ROI // 2
+        y_bottom = roi_centre[1] + cls.SIZE_ROI // 2
+
+        return img[x_left:x_right, y_top:y_bottom]
 
     def rotate_rel_to_bar(self, contour_bar) -> np.ndarray:
         _, (w, h), theta = cv2.minAreaRect(contour_bar)
@@ -189,24 +210,6 @@ class ACRSpatialResolution(HazenTask):
             borderMode=cv2.BORDER_REPLICATE,
         )
         return img_rotated
-
-    @staticmethod
-    def define_ROI_centre(contour_bar_rotated):
-        corners = np.intp(cv2.boxPoints(cv2.minAreaRect(contour_bar_rotated)))
-        test_point = corners[0]
-        centre = np.intp(
-            np.mean(
-                (
-                    test_point,
-                    sorted(
-                        corners[1:],
-                        key=lambda c: np.sqrt(np.sum((c - test_point) ** 2)),
-                    )[1],
-                ),
-                axis=0,
-            )
-        )
-        return centre
 
     def get_esf_raw(self):
         theta_rad = np.deg2rad(self.TARGET_THETA_BAR)
