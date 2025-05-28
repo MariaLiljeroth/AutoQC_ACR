@@ -4,7 +4,8 @@ import sys
 from pathlib import Path
 
 # Append hazenlib parent directory to sys.path as required for imports internal to Scottish-Medium-ACR-Analysis-Framework
-sys.path.append(str((Path(__file__).parent / "backend/smaaf").resolve()))
+main_path = sys.argv[0] if getattr(sys, "frozen", False) else __file__
+sys.path.append(str((Path(main_path).parent / "backend/smaaf").resolve()))
 from frontend.app import App
 
 if __name__ == "__main__":

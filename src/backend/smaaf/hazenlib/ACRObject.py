@@ -138,7 +138,7 @@ class ACRObject:
         _, (w, h), _ = cv2.minAreaRect(contour_bar)
         if w < h:
             w, h = h, w
-        if 140 <= w <= 180 and 7 <= h <= 13:
+        if 130 <= w <= 190 and 5 <= h <= 15:
             pass
         else:
             self.images.reverse()

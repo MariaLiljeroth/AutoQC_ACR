@@ -1,7 +1,10 @@
-*.xlsx
-*.pyc
 .conda/
 .vscode/
-nc_testing/
+build/
+dist/
 docs/
+nc_testing/
 report_image/
+
+*.xlsx
+*.pyc
