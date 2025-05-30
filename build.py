@@ -13,7 +13,6 @@ subprocess.run(
         "pyinstaller",
         "--noconfirm",
         "--clean",
-        "--log-level=DEBUG",
         "--distpath",
         f"dist/AutoQC_ACR_v{version}",
         "AutoQC_ACR.spec",

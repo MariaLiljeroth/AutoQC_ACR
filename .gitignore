@@ -1,4 +1,4 @@
-.conda/
+.conda*/
 .vscode/
 build/
 dist/
@@ -8,3 +8,5 @@ report_image/
 
 *.xlsx
 *.pyc
+
+build_nuitka.py
