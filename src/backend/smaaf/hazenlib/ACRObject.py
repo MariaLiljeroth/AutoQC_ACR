@@ -143,8 +143,6 @@ class ACRObject:
         else:
             self.images.reverse()
             self.dcms.reverse()
-        plt.imshow(self.images[0])
-        plt.show()
 
     def LR_orientation_checks(self):
         # Find center of potentially x-axis inverted image.
