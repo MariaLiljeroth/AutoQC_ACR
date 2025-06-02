@@ -3,8 +3,8 @@
 build/
 dist/
 docs/
-nc_testing/
 report_image/
+validation/
 
 *.xlsx
 *.pyc
