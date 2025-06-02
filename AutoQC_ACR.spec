@@ -6,7 +6,7 @@ binaries = [
     *collect_dynamic_libs("numpy"),
 ]
 
-a = Analysis(
+a = Analysis(  # type: ignore
     ["src/main.py"],
     pathex=["src/backend/smaaf"],
     binaries=binaries,
@@ -19,11 +19,15 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-pyz = PYZ(a.pure)
 
-exe = EXE(
+pyz = PYZ(a.pure)  # type: ignore
+
+splash = Splash("src/frontend/assets/splash.png", a.binaries, a.datas)  # type: ignore
+
+exe = EXE(  # type: ignore
     pyz,
     a.scripts,
+    splash,
     [],
     exclude_binaries=True,
     name="AutoQC_ACR",
@@ -38,8 +42,9 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
-coll = COLLECT(
+coll = COLLECT(  # type: ignore
     exe,
+    splash.binaries,
     a.binaries,
     a.datas,
     strip=False,
