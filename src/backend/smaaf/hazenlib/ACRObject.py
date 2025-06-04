@@ -270,8 +270,32 @@ class ACRObject:
 
     @staticmethod
     def find_phantom_center(img):
-        _, img_binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        canny = cv2.Canny(img_binary.astype(np.uint8), threshold1=30, threshold2=50)
+        norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
+        blur_median = cv2.medianBlur(norm, 11)
+        blur_gaussian = cv2.GaussianBlur(blur_median, (5, 5), 0)
+
+        contours = []
+        dynamic_thresh = 10
+
+        def circle_check(contour):
+            area = cv2.contourArea(contour)
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                return False
+            circularity = 4 * np.pi * area / perimeter**2
+            return 0.75 < circularity < 1.25
+
+        while not (len(contours) == 1 and circle_check(contours[0])):
+            _, mask = cv2.threshold(
+                blur_gaussian, dynamic_thresh, 255, cv2.THRESH_BINARY
+            )
+            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
+            contours, _ = cv2.findContours(
+                canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if dynamic_thresh >= 255:
+                raise ValueError("Phantom edge not detected!")
+            dynamic_thresh += 5
 
         param2 = 1
         circles = np.zeros((2, 1))
