@@ -1,4 +1,4 @@
-import multiprocessing as mp
+from multiprocessing import Manager
 from multiprocessing.managers import BaseProxy
 
 # QUEUE UPDATES ARE CALLED BY PASSING TUPLE (QUEUE ID, QUEUE SUBID, ADDITIONAL ARGS IF NECESSARY...
@@ -13,5 +13,5 @@ def get_queue() -> BaseProxy:
     """
     global queue
     if queue is None:
-        queue = mp.Manager().Queue()
+        queue = Manager().Queue()
     return queue

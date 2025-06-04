@@ -3,6 +3,9 @@
 import sys
 from pathlib import Path
 import multiprocessing as mp
+import matplotlib
+
+matplotlib.use("Agg")
 
 # Append hazenlib parent directory to sys.path as required for imports internal to Scottish-Medium-ACR-Analysis-Framework
 frozen = getattr(sys, "frozen", False)

@@ -6,34 +6,55 @@ from multiprocessing.managers import BaseProxy
 from backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
 from backend.smaaf.hazenlib.utils import get_dicom_files
 from backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
+
 from shared.queueing import get_queue
 from shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
 
 
-def run_tasks(task_args: list[tuple[Path, Path, str]]):
-    """Runs relevant task for each set of args in task_args.
+def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]):
+    """Runs all tasks on all in_subdirs, outputting to relevant out_subdirs.
+    Utilises serial or multiprocessing depending on the number of jobs.
+    A job is defined by a specific set of args to run a task with, e.g. input and output
+    subdirs, the specific task etc. A task is the specific Hazen task e.g. SNR, Uniformity etc.
 
     Args:
-        task_args (list[tuple[Path, Path, str]]): List of args to run each task with.
-            Each tuple contains the input and output directories and the task to run.
+        in_subdirs (list[Path]): List of input subdirectories.
+        out_subdirs (list[Path]): List of output subdirectories.
+        tasks_to_run (list[Path]): List of Hazen tasks to run.
     """
-    # Get queue and add to each task_args tuple as cannot directly access a queue within a process.
+
+    # Formulate job_args, a list of the args to pass to individual jobs.
+    # Collect the input and output subdirs, task, queue and progress bar contribution.
     queue = get_queue()
-    task_args_with_queue = [
-        (in_subdir, out_subdir, task, queue, 1 / len(task_args) * 100)
-        for in_subdir, out_subdir, task in task_args
+    num_jobs = len(in_subdirs) * len(tasks_to_run)
+    d_prog_bar = 1 / num_jobs * 100
+
+    job_args = [
+        (in_subdir, out_subdir, task, queue, d_prog_bar)
+        for in_subdir, out_subdir in zip(in_subdirs, out_subdirs)
+        for task in tasks_to_run
     ]
 
-    # Create a pool of processes to run tasks in parallel.
-    cpu_cores = mp.cpu_count()
-    pool = mp.Pool(
-        processes=cpu_cores // 2 if len(task_args_with_queue) > cpu_cores // 2 else 1
+    # Assign number of workers based on number of jobs
+    jobs_per_task = len(in_subdirs)
+    num_jobs_num_workers_mapping = (
+        (0, jobs_per_task, 1),
+        (jobs_per_task + 1, 2 * jobs_per_task, 2),
+        (2 * jobs_per_task + 1, 4 * jobs_per_task, 3),
+        (4 * jobs_per_task + 1, 100 * jobs_per_task, 4),
     )
-    try:
-        results = pool.starmap(run_solo_task_on_folder, task_args_with_queue)
-    finally:
-        pool.close()
-        pool.join()
+
+    for lower, upper, num_workers in num_jobs_num_workers_mapping:
+        if lower <= num_jobs <= upper:
+            num_workers = num_workers if num_workers < mp.cpu_count() else 1
+            break
+
+    # Run with either parallelism or serial processing.
+    if num_workers > 1:
+        with mp.Pool(processes=num_workers) as pool:
+            results = pool.starmap(run_solo_task_on_folder, job_args)
+    else:
+        results = [run_solo_task_on_folder(*args) for args in job_args]
 
     # Format results in nested dictionary structure and send via queue.
     formatted_results = format_results(results)
@@ -43,12 +64,12 @@ def run_tasks(task_args: list[tuple[Path, Path, str]]):
 def run_solo_task_on_folder(
     in_subdir: Path, out_subdir: Path, task: str, queue: BaseProxy, perc: float
 ) -> dict:
-    """Returns a single task for a specific arg set in task_args.
-    Returns the raw Hazen output for the task (which is in dict structure).
+    """Runs a single job for a specific arg set in job_args.
+    Returns the raw Hazen output for the job (which is in dict structure).
 
     Args:
-        in_subdir (Path): Specific input subdirectory for task.
-        out_subdir (Path): Specific output subdirectory for task.
+        in_subdir (Path): Specific input subdirectory for job
+        out_subdir (Path): Specific output subdirectory for job.
         task (str): Task to run.
         queue (BaseProxy): Queue to send progress updates to.
         perc (float): Float value to add to current state of progress bar.

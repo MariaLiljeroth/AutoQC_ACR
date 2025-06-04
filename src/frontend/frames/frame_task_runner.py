@@ -21,7 +21,6 @@ class FrameTaskRunner(tk.Frame):
         in_subdirs (list[Path]): List of input subdirectories (of sorted DICOMs).
         out_subdirs (list[Path]): List of output subdirectories (of sorted DICOMs).
         tasks_to_run (list[str]): List of tasks to run on the input data.
-        task_args (list[tuple]): List of tuples containing args for individual tasks.
         labels (dict[str, tk.Label]): Dictionary of tk.Label widgets.
         progress_bars (dict[str, ttk.Progressbar]): Dictionary of tk.Progressbar widgets.
         prep_bar_running (bool): Flag to indicate if the preparation progress bar is running.
@@ -65,11 +64,6 @@ class FrameTaskRunner(tk.Frame):
         self.in_subdirs = in_subdirs
         self.out_subdirs = out_subdirs
         self.tasks_to_run = tasks_to_run
-        self.task_args = [
-            (in_subdir, out_subdir, task)
-            for in_subdir, out_subdir in zip(in_subdirs, out_subdirs)
-            for task in tasks_to_run
-        ]
 
         self._create_widgets()
         self._layout_widgets()
@@ -83,7 +77,7 @@ class FrameTaskRunner(tk.Frame):
             "title": tk.Label(self, text="Task Progress", font=FONT_TITLE),
             "prep_progress": tk.Label(
                 self,
-                text="Preparing to run:",
+                text="Preparing workers:",
                 font=FONT_TEXT,
                 anchor="center",
             ),
@@ -139,11 +133,12 @@ class FrameTaskRunner(tk.Frame):
 
     def _trigger_task_running(self):
         """Triggers task running process and starts prep progress bar.
-        This runs until the first task is completed.
+        This bar runs until the first task is completed.
         """
         self.progress_bars["prep"].start(10)
         self.prep_bar_running = True
-        threading.Thread(target=run_tasks, args=(self.task_args,)).start()
+        args = (self.in_subdirs, self.out_subdirs, self.tasks_to_run)
+        threading.Thread(target=run_tasks, args=args).start()
 
     def handle_event(self, event: tuple):
         """Handles events passed from main event queue (see App._check_queue).

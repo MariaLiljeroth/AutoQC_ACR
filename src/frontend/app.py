@@ -4,8 +4,8 @@ import traceback
 import tkinter as tk
 from tkinter import messagebox
 
-from shared.queueing import get_queue
 from queue import Empty
+from shared.queueing import get_queue
 
 from frontend.frames.frame_config import FrameConfig
 from frontend.frames.frame_task_runner import FrameTaskRunner
