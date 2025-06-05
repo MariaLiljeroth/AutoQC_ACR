@@ -135,10 +135,7 @@ class ACRObject:
         adjustments are needed to restore the correct slice order.
         """
         contour_bar = self.get_contour_bar(self.images[0])
-        _, (w, h), _ = cv2.minAreaRect(contour_bar)
-        if w < h:
-            w, h = h, w
-        if 130 <= w <= 190 and 5 <= h <= 15:
+        if contour_bar is not None:
             pass
         else:
             self.images.reverse()
@@ -268,34 +265,20 @@ class ACRObject:
             self.images, self.rot_angle, resize=False, preserve_range=True
         )
 
-    @staticmethod
-    def find_phantom_center(img):
-        norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
-        blur_median = cv2.medianBlur(norm, 11)
-        blur_gaussian = cv2.GaussianBlur(blur_median, (5, 5), 0)
+    @classmethod
+    def find_phantom_center(cls, image):
+        """
+        Finds the phantom center and radius
 
-        contours = []
-        dynamic_thresh = 10
-
-        def circle_check(contour):
-            area = cv2.contourArea(contour)
-            perimeter = cv2.arcLength(contour, True)
-            if perimeter == 0:
-                return False
-            circularity = 4 * np.pi * area / perimeter**2
-            return 0.75 < circularity < 1.25
-
-        while not (len(contours) == 1 and circle_check(contours[0])):
-            _, mask = cv2.threshold(
-                blur_gaussian, dynamic_thresh, 255, cv2.THRESH_BINARY
-            )
-            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
-            contours, _ = cv2.findContours(
-                canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            if dynamic_thresh >= 255:
-                raise ValueError("Phantom edge not detected!")
-            dynamic_thresh += 5
+        Returns
+        -------
+        float:
+            The calculated phantom centre
+        float:
+            The calculated phantom radius
+        """
+        mask = cls.get_dynamic_mask_image(image)
+        canny = cv2.Canny(mask, threshold1=30, threshold2=50)
 
         param2 = 1
         circles = np.zeros((2, 1))
@@ -317,37 +300,121 @@ class ACRObject:
 
         return centre, radius
 
-    @staticmethod
-    def get_contour_bar(img):
-        normalised = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        contrast_enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
-            normalised
-        )
-        _, thresholded = cv2.threshold(
-            contrast_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
+    def get_contour_bar(self, image):
+        mask = self.get_dynamic_mask_image(image)
+        canny = cv2.Canny(mask, threshold1=30, threshold2=50)
+        contours, _ = cv2.findContours(canny, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-        contours, _ = cv2.findContours(
-            thresholded.astype(np.uint8),
-            mode=cv2.RETR_TREE,
-            method=cv2.CHAIN_APPROX_NONE,
-        )
-
-        def get_aspect_ratio(contour):
+        def is_contour_bar(contour):
             _, (width, height), _ = cv2.minAreaRect(contour)
-            return min(width, height) / max(width, height)
 
-        # filter out tiny contours from noise
-        threshold_area = 15 * 15
-        filtered_contours = [
-            c for c in contours if cv2.contourArea(c) >= threshold_area
-        ]
-        # select central insert
-        contour_bar = sorted(
-            filtered_contours,
-            key=lambda c: get_aspect_ratio(c),
-        )[0]
-        return contour_bar
+            if width < height:
+                width, height = height, width
+
+            dim = canny.shape[0]
+
+            if 0.55 * dim <= width <= 0.75 * dim and 0.02 * dim <= height <= 0.06 * dim:
+                return True
+            else:
+                return False
+
+        contour_check = [is_contour_bar(c) for c in contours]
+        for contour, check in zip(contours, contour_check):
+            if check:
+                print(cv2.minAreaRect(contour))
+                return contour
+        return None
+
+    @staticmethod
+    def get_dynamic_mask_image(image):
+        """Creates a mask of the input image.
+        Mask is obtained dynamically be testing for presence of phantom edge at different mask thresholds.
+        Input image should be as noise-free as possible.
+
+        Args:
+            image (np.ndarray): Image to dynamically threshold. Must be 8-bit.
+
+        Returns:
+            np.ndarray: The masked image.
+        """
+        # denoise by fast non-local means denoising (similarity patch search)
+        # h parameter calculated dynamically according to the std of image (gives indicating of noise levels)
+        image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
+        h = np.std(image) * 0.4
+
+        image = cv2.fastNlMeansDenoising(image, h=h)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+
+        def is_phantom_edge(contour):
+            # Calculate key raw contour stats
+            rows, cols = image.shape
+            epsilon = 1e-10
+
+            # Calculate key convex hull stats
+            hull = cv2.convexHull(contour)
+            M_hull = cv2.moments(hull)
+            area_hull = cv2.contourArea(hull)
+            perimeter_hull = cv2.arcLength(hull, True)
+            cx_hull = M_hull["m10"] / (M_hull["m00"] + epsilon)
+            cy_hull = M_hull["m01"] / (M_hull["m00"] + epsilon)
+
+            # Calculate key min enclosing circle stats
+            _, radius_fit_circ = cv2.minEnclosingCircle(contour)
+            perimeter_fit_circ = 2 * np.pi * radius_fit_circ
+            area_fit_circ = np.pi * radius_fit_circ**2
+
+            # Check stats against expected
+            ratio_area = area_fit_circ / (area_hull + epsilon)
+            area_check = ratio_area <= 1.1
+
+            ratio_x = cx_hull / cols
+            x_check = 0.45 <= ratio_x <= 0.65
+
+            ratio_y = cy_hull / rows
+            y_check = 0.45 <= ratio_y <= 0.65
+
+            ratio_radius = radius_fit_circ / np.mean([rows, cols])
+            radius_check = 1 / 4 <= ratio_radius <= 1 / 2
+
+            ratio_perimeter = perimeter_hull / (perimeter_fit_circ + epsilon)
+            perimeter_check = 0.9 <= ratio_perimeter <= 1.1
+
+            circularity = 4 * np.pi * area_hull / (perimeter_hull + epsilon) ** 2
+            circularity_check = 0.9 <= circularity <= 1.1
+
+            return all(
+                [
+                    area_check,
+                    x_check,
+                    y_check,
+                    radius_check,
+                    perimeter_check,
+                    circularity_check,
+                ]
+            )
+
+        dynamic_thresh = 4
+
+        while dynamic_thresh <= 255:
+            # get mask using dynamic thresholding and get external contours.
+            _, mask = cv2.threshold(image, dynamic_thresh, 255, cv2.THRESH_BINARY)
+            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
+            contours, _ = cv2.findContours(
+                canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            # if any contours match expected shape of phantom edge, return mask of image.
+            # returned mask has a pad in threshold for noise safety.
+            if any([is_phantom_edge(c) for c in contours]):
+                pad = 15
+                return cv2.threshold(
+                    image, dynamic_thresh + pad, 255, cv2.THRESH_BINARY
+                )[1]
+
+            dynamic_thresh += 2
+
+        raise ValueError("Phantom edge not detected!")
 
     def get_mask_image(self, image, mag_threshold=0.05, open_threshold=500):
         """Create a masked pixel array

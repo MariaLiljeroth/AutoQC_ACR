@@ -255,34 +255,36 @@ class ACRSliceThickness(HazenTask):
         """
         # Normalize to uint8, enhance contast and binarize using otsu thresh
 
-        img_uint8 = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        contrastEnhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
-            img_uint8
-        )
-        _, img_binary = cv2.threshold(
-            contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
+        # img_uint8 = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        # contrastEnhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
+        #     img_uint8
+        # )
+        # _, img_binary = cv2.threshold(
+        #     contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        # )
 
-        # Find contour by x-span sort
-        contours, _ = cv2.findContours(
-            img_binary.astype(np.uint8),
-            mode=cv2.RETR_TREE,
-            method=cv2.CHAIN_APPROX_NONE,
-        )
+        # # Find contour by x-span sort
+        # contours, _ = cv2.findContours(
+        #     img_binary.astype(np.uint8),
+        #     mode=cv2.RETR_TREE,
+        #     method=cv2.CHAIN_APPROX_NONE,
+        # )
 
-        def get_aspect_ratio(contour):
-            _, (width, height), _ = cv2.minAreaRect(contour)
-            return min(width, height) / max(width, height)
+        # def get_aspect_ratio(contour):
+        #     _, (width, height), _ = cv2.minAreaRect(contour)
+        #     return min(width, height) / max(width, height)
 
-        # filter out tiny contours from noise
-        threshArea = 15 * 15
-        contours = [cont for cont in contours if cv2.contourArea(cont) >= threshArea]
-        # select central insert
-        contours_sorted = sorted(
-            contours,
-            key=lambda c: get_aspect_ratio(c),
-        )
-        insertContour = contours_sorted[0]
+        # # filter out tiny contours from noise
+        # threshArea = 15 * 15
+        # contours = [cont for cont in contours if cv2.contourArea(cont) >= threshArea]
+        # # select central insert
+        # contours_sorted = sorted(
+        #     contours,
+        #     key=lambda c: get_aspect_ratio(c),
+        # )
+        # insertContour = contours_sorted[0]
+
+        insertContour = self.ACR_obj.get_contour_bar(img)
 
         # Create list of Point objects for the four corners of the contour
         insertCorners = cv2.boxPoints(cv2.minAreaRect(insertContour))
