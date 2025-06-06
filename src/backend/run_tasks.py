@@ -39,9 +39,9 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
     jobs_per_task = len(in_subdirs)
     num_jobs_num_workers_mapping = (
         (0, jobs_per_task, 1),
-        (jobs_per_task + 1, 2 * jobs_per_task, 2),
-        (2 * jobs_per_task + 1, 4 * jobs_per_task, 3),
-        (4 * jobs_per_task + 1, 100 * jobs_per_task, 4),
+        (jobs_per_task + 1, 2 * jobs_per_task, 3),
+        (2 * jobs_per_task + 1, 4 * jobs_per_task, 4),
+        (4 * jobs_per_task + 1, 100 * jobs_per_task, 5),
     )
 
     for lower, upper, num_workers in num_jobs_num_workers_mapping:
