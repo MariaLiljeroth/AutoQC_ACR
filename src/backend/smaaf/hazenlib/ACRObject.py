@@ -147,16 +147,14 @@ class ACRObject:
 
         def is_uniformity_slice(image):
             mask = self.get_dynamic_mask_image(image)
-            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
-            contours, _ = cv2.findContours(
-                canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
-            )
+            contours = self.get_contours_from_mask(mask)
+
             contours = [
                 c
                 for c in contours
-                if cv2.contourArea(cv2.convexHull(c)) >= (0.1 * canny.shape[0]) ** 2
+                if cv2.contourArea(cv2.convexHull(c)) >= (0.1 * mask.shape[0]) ** 2
             ]
-            bool_check = all([self.is_phantom_edge(c, canny.shape) for c in contours])
+            bool_check = all([self.is_phantom_edge(c, mask.shape) for c in contours])
             return bool_check, mask
 
         bool_check, mask = is_uniformity_slice(self.images[4])
@@ -200,15 +198,12 @@ class ACRObject:
         while dynamic_thresh <= 255:
             # get mask using dynamic thresholding and get contours.
             _, mask = cv2.threshold(image, dynamic_thresh, 255, cv2.THRESH_BINARY)
-            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
-            contours, _ = cv2.findContours(
-                canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
-            )
+            contours = cls.get_contours_from_mask(mask)
 
             # if any contours match expected shape of phantom edge, return mask of image.
             # returned mask has a pad in threshold for noise safety.
             phantom_edge_visible = any(
-                [cls.is_phantom_edge(c, canny.shape) for c in contours]
+                [cls.is_phantom_edge(c, mask.shape) for c in contours]
             )
 
             additional_contour_visible = (
@@ -239,6 +234,22 @@ class ACRObject:
             dynamic_thresh += 2
 
         raise ValueError("Expected phantom features not detected in mask creation!")
+
+    @staticmethod
+    def get_contours_from_mask(
+        mask,
+        canny_threshold1=30,
+        canny_threshold2=50,
+        dilation_k=3,
+        find_cont_mode=cv2.RETR_TREE,
+    ):
+        canny = cv2.Canny(mask, canny_threshold1, canny_threshold2)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_k, dilation_k))
+        canny = cv2.dilate(canny, kernel)
+
+        contours, _ = cv2.findContours(canny, find_cont_mode, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
 
     @staticmethod
     def is_phantom_edge(contour, source_image_shape):
@@ -320,13 +331,11 @@ class ACRObject:
         float:
             The calculated phantom radius
         """
-        contours, _ = cv2.findContours(
-            self.masks[4], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        mask = self.masks[4]
+        contours = self.get_contours_from_mask(mask, find_cont_mode=cv2.RETR_EXTERNAL)
+
         # Take the first contour that fits that criteria for the phantom edge.
-        phantom_edge = [
-            c for c in contours if self.is_phantom_edge(c, self.masks[4].shape)
-        ][0]
+        phantom_edge = [c for c in contours if self.is_phantom_edge(c, mask.shape)][0]
         centre, radius = cv2.minEnclosingCircle(phantom_edge)
 
         return centre, radius

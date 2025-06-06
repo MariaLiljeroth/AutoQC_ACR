@@ -6,6 +6,7 @@ from multiprocessing.managers import BaseProxy
 from backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
 from backend.smaaf.hazenlib.utils import get_dicom_files
 from backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
+from backend.settings import FORCE_SEQUENTIAL_PROCESSING
 
 from shared.queueing import get_queue
 from shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
@@ -46,7 +47,11 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
 
     for lower, upper, num_workers in num_jobs_num_workers_mapping:
         if lower <= num_jobs <= upper:
-            num_workers = num_workers if num_workers < mp.cpu_count() else 1
+            num_workers = (
+                num_workers
+                if num_workers < mp.cpu_count() and not FORCE_SEQUENTIAL_PROCESSING
+                else 1
+            )
             break
 
     # Run with either parallelism or serial processing.
