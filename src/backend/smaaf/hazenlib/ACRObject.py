@@ -30,6 +30,9 @@ class ACRObject:
         # Load files as DICOM and their pixel arrays into 'images'
         self.images, self.dcms = self.sort_images()
 
+        # Create empty masks to fill later where required
+        self.masks = [None] * len(self.images)
+
         # Store the pixel spacing value from the first image (expected to be the same for all)
         if "PixelSpacing" in self.dcms[0]:
             self.pixel_spacing = self.dcms[0].PixelSpacing
@@ -38,21 +41,14 @@ class ACRObject:
                 if elem.tag == (0x28, 0x30):
                     self.pixel_spacing = elem.value
 
-        # Check slice order of images and whether images need to be flipped LR.
-        self.slice_order_checks()
-        self.LR_orientation_checks()
+        # Check slice order of images and reverse if necessary. Mask of uniformity slice (slice 4) is also stored.
+        self.masks[4] = self.slice_order_checks()
 
-        # Determine whether image rotation is necessary
-        self.rot_angle = self.determine_rotation()
+        # Get mask of slice thickness slice (slice 0)
+        self.masks[0] = self.get_mask_slice_0()
 
-        # Store the DCM object of slice 7 as it is used often
-        self.slice7_dcm = self.dcms[6]
-
-        # Find the centre coordinates of the phantom (circle)
-        self.centre, self.radius = self.find_phantom_center(self.images[4])
-
-        # Store a mask image of slice 7 for reusability
-        self.mask_image = self.get_mask_image(self.images[6])
+        # Finds phantom centre
+        self.centre, self.radius = self.find_phantom_center()
 
         if "Localiser" in kwargs.keys():
             self.LocalisierDCM = dcmread(kwargs["Localiser"])
@@ -60,6 +56,19 @@ class ACRObject:
             self.LocalisierDCM = None
 
         self.kwargs = kwargs
+
+        # self.LR_orientation_checks()
+
+        # Determine whether image rotation is necessary
+        # self.rot_angle = self.determine_rotation()
+
+        # Store the DCM object of slice 7 as it is used often
+        # self.slice7_dcm = self.dcms[6]
+
+        # Find the centre coordinates of the phantom (circle)
+
+        # Store a mask image of slice 7 for reusability
+        # self.mask_image = self.get_mask_image(self.images[6])
 
     def sort_images(self):
         """
@@ -123,6 +132,7 @@ class ACRObject:
             apply_modality_lut(dicom.pixel_array, dicom).astype("uint16")
             for dicom in dicom_stack
         ]
+
         return img_stack, dicom_stack
 
     def slice_order_checks(self):
@@ -134,240 +144,197 @@ class ACRObject:
         This function analyzes the given set of images and their associated DICOM objects to determine if any
         adjustments are needed to restore the correct slice order.
         """
-        contour_bar = self.get_contour_bar(self.images[0])
-        _, (w, h), _ = cv2.minAreaRect(contour_bar)
-        if w < h:
-            w, h = h, w
-        if 130 <= w <= 190 and 5 <= h <= 15:
+
+        def is_uniformity_slice(image):
+            mask = self.get_dynamic_mask_image(image)
+            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
+            contours, _ = cv2.findContours(
+                canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
+            contours = [
+                c
+                for c in contours
+                if cv2.contourArea(cv2.convexHull(c)) >= (0.1 * canny.shape[0]) ** 2
+            ]
+            bool_check = all([self.is_phantom_edge(c, canny.shape) for c in contours])
+            return bool_check, mask
+
+        bool_check, mask = is_uniformity_slice(self.images[4])
+        if bool_check:
             pass
+
         else:
             self.images.reverse()
             self.dcms.reverse()
+            bool_check, mask = is_uniformity_slice(self.images[4])
+            if bool_check:
+                pass
+            else:
+                raise RuntimeError("Slice order checks failed.")
 
-    def LR_orientation_checks(self):
-        # Find center of potentially x-axis inverted image.
-        center, radius = self.find_phantom_center(self.images[4])
-        img2 = self.images[1]
+        return mask
 
-        # Generate masks of phantom, and ring about phantom edge.
-        phantomMask = self.circular_mask(center, radius * 0.98, img2.shape)
-        tightMask = self.circular_mask(center, radius * 0.95, img2.shape)
-        outerMask = self.circular_mask(center, radius * 1.1, img2.shape)
-        ringMask = np.logical_xor(tightMask, outerMask)
+    @classmethod
+    def get_dynamic_mask_image(cls, image, additional_contour_check=None):
+        """Creates a mask of the input image.
+        Mask is obtained dynamically be testing for presence of phantom edge at different mask thresholds.
+        Input image should be as noise-free as possible.
 
-        # Apply ring mask to image and dilate result.
-        ring = np.zeros_like(img2)
-        ring[ringMask] = img2[ringMask]
-        dilatedRing = cv2.dilate(
-            ring, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)), 1
-        )
-        dilatedRing = cv2.GaussianBlur(dilatedRing, (3, 3), 0, 0)
+        Args:
+            image (np.ndarray): Image to dynamically threshold. Must be 8-bit.
 
-        # Combine two images.
-        img2Mod = img2.copy()
-        img2Mod[~phantomMask] = dilatedRing[~phantomMask]
-
-        # Create binary modified image.
-        clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
-        contrastEnhanced = clahe.apply(img2Mod)
-        _, binary = cv2.threshold(
-            contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        # Find contour of top L shape
-        contours, _ = cv2.findContours(
-            binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
-        )
-
-        contours = sorted(
-            contours,
-            key=lambda cont: np.max(cont[:, 0, 1]),
-            reverse=True,
-        )
-
-        topLShape = contours[-1]
-
-        # Find a bbox around top L shape
-        bbox = cv2.boundingRect(topLShape)
-        x, y, w, h = bbox
-
-        def points_from_boundingRect(x, y, w, h):
-            points = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
-
-            return points
-
-        # Split bbox into two along short edge
-        boxL = np.intp(points_from_boundingRect(x, y, w / 2, h))
-        boxR = np.intp(points_from_boundingRect(x + w / 2, y, w / 2, h))
-
-        # Find the mean pixel value within each smaller rect
-        maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(
-            np.uint8
-        )
-        maskR = cv2.fillPoly(np.zeros_like(img2), [boxR], (255, 255, 255)).astype(
-            np.uint8
-        )
-
-        meanL = cv2.mean(img2, mask=maskL)
-        meanR = cv2.mean(img2, mask=maskR)
-
-        # LR orientation swap if required
-        if meanL < meanR:
-            # print("Performing LR orientation swap to restore correct view.")
-            flipped_images = [np.fliplr(image) for image in self.images]
-            for index, dcm in enumerate(self.dcms):
-                dcm.PixelData = flipped_images[index].tobytes()
-            self.images = flipped_images
-        else:
-            pass
-            # print("LR orientation swap not required.")
-
-    def determine_rotation(self):
+        Returns:
+            np.ndarray: The masked image.
         """
-        Determine the rotation angle of the phantom using edge detection and the Hough transform.
+        # denoise by fast non-local means denoising (similarity patch search)
+        # h parameter calculated dynamically according to the std of image (gives indicating of noise levels)
+        image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
+        h = np.std(image) * 0.4
 
-        Returns
-        ------
-        rot_angle : float
-            The rotation angle in degrees.
+        image = cv2.fastNlMeansDenoising(image, h=h)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+
+        dynamic_thresh = 4
+
+        while dynamic_thresh <= 255:
+            # get mask using dynamic thresholding and get contours.
+            _, mask = cv2.threshold(image, dynamic_thresh, 255, cv2.THRESH_BINARY)
+            canny = cv2.Canny(mask, threshold1=30, threshold2=50)
+            contours, _ = cv2.findContours(
+                canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            # if any contours match expected shape of phantom edge, return mask of image.
+            # returned mask has a pad in threshold for noise safety.
+            phantom_edge_visible = any(
+                [cls.is_phantom_edge(c, canny.shape) for c in contours]
+            )
+
+            additional_contour_visible = (
+                any([additional_contour_check(c) for c in contours])
+                if additional_contour_check is not None
+                else True
+            )
+
+            if phantom_edge_visible and additional_contour_visible:
+                pad = 15
+                _, mask = cv2.threshold(
+                    image, dynamic_thresh + pad, 255, cv2.THRESH_BINARY
+                )
+
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+                    mask, connectivity=8
+                )
+                min_connected_pixels = image.size // 100
+
+                filtered_mask = np.zeros_like(mask)
+                for label in range(1, num_labels):
+                    area = stats[label, cv2.CC_STAT_AREA]
+                    if area >= min_connected_pixels:
+                        filtered_mask[labels == label] = 255
+
+                return filtered_mask
+
+            dynamic_thresh += 2
+
+        raise ValueError("Expected phantom features not detected in mask creation!")
+
+    @staticmethod
+    def is_phantom_edge(contour, source_image_shape):
+        # Calculate key raw contour stats
+        rows, cols = source_image_shape
+        epsilon = 1e-10
+
+        # Calculate key convex hull stats
+        hull = cv2.convexHull(contour)
+        M_hull = cv2.moments(hull)
+        area_hull = cv2.contourArea(hull)
+        perimeter_hull = cv2.arcLength(hull, True)
+        cx_hull = M_hull["m10"] / (M_hull["m00"] + epsilon)
+        cy_hull = M_hull["m01"] / (M_hull["m00"] + epsilon)
+
+        # Calculate key min enclosing circle stats
+        _, radius_fit_circ = cv2.minEnclosingCircle(contour)
+        perimeter_fit_circ = 2 * np.pi * radius_fit_circ
+        area_fit_circ = np.pi * radius_fit_circ**2
+
+        # Check stats against expected
+        ratio_area = area_fit_circ / (area_hull + epsilon)
+        area_check = ratio_area <= 1.1
+
+        ratio_x = cx_hull / cols
+        x_check = 0.45 <= ratio_x <= 0.65
+
+        ratio_y = cy_hull / rows
+        y_check = 0.45 <= ratio_y <= 0.65
+
+        ratio_radius = radius_fit_circ / np.mean([rows, cols])
+        radius_check = 1 / 4 <= ratio_radius <= 1 / 2
+
+        ratio_perimeter = perimeter_hull / (perimeter_fit_circ + epsilon)
+        perimeter_check = 0.9 <= ratio_perimeter <= 1.1
+
+        circularity = 4 * np.pi * area_hull / (perimeter_hull + epsilon) ** 2
+        circularity_check = 0.9 <= circularity <= 1.1
+
+        return all(
+            [
+                area_check,
+                x_check,
+                y_check,
+                radius_check,
+                perimeter_check,
+                circularity_check,
+            ]
+        )
+
+    def get_mask_slice_0(self):
+        image_0 = self.images[0]
+        mask = self.get_dynamic_mask_image(
+            image_0, lambda c: self.is_slice_thickness_insert(c, image_0.shape)
+        )
+        return mask
+
+    @staticmethod
+    def is_slice_thickness_insert(contour, source_image_shape):
+        height_image, width_image = source_image_shape
+        _, (width, height), _ = cv2.minAreaRect(contour)
+
+        if width < height:
+            width, height = height, width
+
+        width_check = 0.55 * width_image <= width <= 0.75 * width_image
+        height_check = 0.02 * height_image <= height <= 0.06 * height_image
+
+        return width_check and height_check
+
+    def find_phantom_center(self):
         """
-
-        thresh = cv2.threshold(self.images[0], 127, 255, cv2.THRESH_BINARY)[1]
-        if (
-            self.MediumACRPhantom is True
-        ):  # the above thresh doesnt work for the med phantom (not sure why but maybe it shouldnt be a flat thresh anyway...)
-            thresh = cv2.threshold(
-                self.images[0], np.max(self.images[0]) * 0.25, 255, cv2.THRESH_BINARY
-            )[1]
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        dilate = cv2.morphologyEx(thresh, cv2.MORPH_DILATE, kernel)
-        diff = cv2.absdiff(dilate, thresh)
-
-        h, theta, d = skimage.transform.hough_line(diff)
-        _, angles, _ = skimage.transform.hough_line_peaks(h, theta, d)
-
-        # angle = np.rad2deg(scipy.stats.mode(angles)[0][0]) #This needs as specific version of scipy or you get an error (drop the last [0])
-        angle = np.rad2deg(
-            scipy.stats.mode(angles)[0]
-        )  # This needs as specific version of scipy or you get an error (drop the last [0])
-        rot_angle = angle + 90 if angle < 0 else angle - 90
-        return rot_angle
-
-    def rotate_images(self):
-        """
-        Rotate the images by a specified angle. The value range and dimensions of the image are preserved.
+        Finds the phantom center and radius
 
         Returns
         -------
-        np.array:
-            The rotated images.
+        float:
+            The calculated phantom centre
+        float:
+            The calculated phantom radius
         """
-
-        return skimage.transform.rotate(
-            self.images, self.rot_angle, resize=False, preserve_range=True
+        contours, _ = cv2.findContours(
+            self.masks[4], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-
-    @staticmethod
-    def find_phantom_center(img):
-        _, img_binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        canny = cv2.Canny(img_binary.astype(np.uint8), threshold1=30, threshold2=50)
-
-        param2 = 1
-        circles = np.zeros((2, 1))
-        # Stop when first circle is found
-        while circles.shape[0] > 1:
-            circles = cv2.HoughCircles(
-                image=canny,
-                method=cv2.HOUGH_GRADIENT,
-                dp=1,
-                minDist=int(canny.shape[0] / 2),
-                param1=30,
-                param2=param2,
-            ).reshape(-1, 3)
-            param2 += 1
-
-        circles = circles.flatten()
-        centre = circles[:2]
-        radius = circles[2]
+        # Take the first contour that fits that criteria for the phantom edge.
+        phantom_edge = [
+            c for c in contours if self.is_phantom_edge(c, self.masks[4].shape)
+        ][0]
+        centre, radius = cv2.minEnclosingCircle(phantom_edge)
 
         return centre, radius
 
     @staticmethod
-    def get_contour_bar(img):
-        normalised = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        contrast_enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
-            normalised
-        )
-        _, thresholded = cv2.threshold(
-            contrast_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        contours, _ = cv2.findContours(
-            thresholded.astype(np.uint8),
-            mode=cv2.RETR_TREE,
-            method=cv2.CHAIN_APPROX_NONE,
-        )
-
-        def get_aspect_ratio(contour):
-            _, (width, height), _ = cv2.minAreaRect(contour)
-            return min(width, height) / max(width, height)
-
-        # filter out tiny contours from noise
-        threshold_area = 15 * 15
-        filtered_contours = [
-            c for c in contours if cv2.contourArea(c) >= threshold_area
-        ]
-        # select central insert
-        contour_bar = sorted(
-            filtered_contours,
-            key=lambda c: get_aspect_ratio(c),
-        )[0]
-        return contour_bar
-
-    def get_mask_image(self, image, mag_threshold=0.05, open_threshold=500):
-        """Create a masked pixel array
-        Mask an image by magnitude threshold before applying morphological opening to remove small unconnected
-        features. The convex hull is calculated in order to accommodate for potential air bubbles.
-
-        Args:
-            image (_type_): _description_
-            mag_threshold (float, optional): magnitude threshold. Defaults to 0.05.
-            open_threshold (int, optional): open threshold. Defaults to 500.
-
-        Returns:
-            np.array:
-                The masked image.
-        """
-        test_mask = self.circular_mask(
-            self.centre, (80 // self.pixel_spacing[0]), image.shape
-        )
-
-        test_image = image * test_mask
-        test_vals = test_image[np.nonzero(test_image)]
-        if np.percentile(test_vals, 80) - np.percentile(test_vals, 10) > 0.9 * np.max(
-            image
-        ):
-            print(
-                "Large intensity variations detected in image. Using local thresholding!"
-            )
-            initial_mask = skimage.filters.threshold_sauvola(
-                image, window_size=3, k=0.95
-            )
-        else:
-            initial_mask = image > mag_threshold * np.max(image)
-
-        opened_mask = skimage.morphology.area_opening(
-            initial_mask, area_threshold=open_threshold
-        )
-        final_mask = skimage.morphology.convex_hull_image(opened_mask)
-
-        return final_mask
-
-    @staticmethod
     def circular_mask(centre, radius, dims):
         """
-        Sort a stack of images based on slice position.
+        Creates a perfectly circular mask of the phantom.
 
         Parameters
         ----------
@@ -380,18 +347,13 @@ class ACRObject:
 
         Returns
         -------
-        img_stack : np.array
-            A sorted stack of images, where each image is represented as a 2D numpy array.
+        mask : np.array
+            Circular mask of the phantom.
         """
         # Define a circular logical mask
 
-        # BugFix, should this not start at 0?
         x = np.linspace(0, dims[0] - 1, dims[0])
         y = np.linspace(0, dims[1] - 1, dims[1])
-
-        # This is the old code
-        # x = np.linspace(1, dims[0], dims[0])
-        # y = np.linspace(1, dims[1], dims[1])
 
         X, Y = np.meshgrid(x, y)
         mask = (X - centre[0]) ** 2 + (Y - centre[1]) ** 2 <= radius**2
@@ -480,34 +442,197 @@ class ACRObject:
         y_prime = origin[1] + s * (point[0] - origin[0]) + c * (point[1] - origin[1])
         return x_prime, y_prime
 
-    @staticmethod
-    def find_n_highest_peaks(data, n, height=1):
-        """
-        Find the indices and amplitudes of the N highest peaks within a 1D array.
+    # @staticmethod
+    # def find_n_highest_peaks(data, n, height=1):
+    #     """
+    #     Find the indices and amplitudes of the N highest peaks within a 1D array.
 
-        Parameters:
-        ----------
-        data    : np.array
-            The array containing the data to perform peak extraction on.
-        n       : int
-            The coordinates of the point to rotate.
-        height  : int or float
-            The amplitude threshold for peak identification.
+    #     Parameters:
+    #     ----------
+    #     data    : np.array
+    #         The array containing the data to perform peak extraction on.
+    #     n       : int
+    #         The coordinates of the point to rotate.
+    #     height  : int or float
+    #         The amplitude threshold for peak identification.
 
-        Returns:
-        ----------
-        peak_locs       : np.array
-            A numpy array containing the indices of the N highest peaks identified.
-        peak_heights    : np.array
-            A numpy array containing the amplitudes of the N highest peaks identified.
-        """
-        peaks = scipy.signal.find_peaks(data, height)
-        pk_heights = peaks[1]["peak_heights"]
-        pk_ind = peaks[0]
+    #     Returns:
+    #     ----------
+    #     peak_locs       : np.array
+    #         A numpy array containing the indices of the N highest peaks identified.
+    #     peak_heights    : np.array
+    #         A numpy array containing the amplitudes of the N highest peaks identified.
+    #     """
+    #     peaks = scipy.signal.find_peaks(data, height)
+    #     pk_heights = peaks[1]["peak_heights"]
+    #     pk_ind = peaks[0]
 
-        peak_heights = pk_heights[
-            (-pk_heights).argsort()[:n]
-        ]  # find n highest peak amplitudes
-        peak_locs = pk_ind[(-pk_heights).argsort()[:n]]  # find n highest peak locations
+    #     peak_heights = pk_heights[
+    #         (-pk_heights).argsort()[:n]
+    #     ]  # find n highest peak amplitudes
+    #     peak_locs = pk_ind[(-pk_heights).argsort()[:n]]  # find n highest peak locations
 
-        return np.sort(peak_locs), np.sort(peak_heights)
+    #     return np.sort(peak_locs), np.sort(peak_heights)
+
+    # def LR_orientation_checks(self):
+    #     # Find center of potentially x-axis inverted image.
+    #     center, radius = self.find_phantom_center(self.images[4])
+    #     img2 = self.images[1]
+
+    #     # Generate masks of phantom, and ring about phantom edge.
+    #     phantomMask = self.circular_mask(center, radius * 0.98, img2.shape)
+    #     tightMask = self.circular_mask(center, radius * 0.95, img2.shape)
+    #     outerMask = self.circular_mask(center, radius * 1.1, img2.shape)
+    #     ringMask = np.logical_xor(tightMask, outerMask)
+
+    #     # Apply ring mask to image and dilate result.
+    #     ring = np.zeros_like(img2)
+    #     ring[ringMask] = img2[ringMask]
+    #     dilatedRing = cv2.dilate(
+    #         ring, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15)), 1
+    #     )
+    #     dilatedRing = cv2.GaussianBlur(dilatedRing, (3, 3), 0, 0)
+
+    #     # Combine two images.
+    #     img2Mod = img2.copy()
+    #     img2Mod[~phantomMask] = dilatedRing[~phantomMask]
+
+    #     # Create binary modified image.
+    #     clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(3, 3))
+    #     contrastEnhanced = clahe.apply(img2Mod)
+    #     _, binary = cv2.threshold(
+    #         contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    #     )
+
+    #     # Find contour of top L shape
+    #     contours, _ = cv2.findContours(
+    #         binary.astype(np.uint8), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE
+    #     )
+
+    #     contours = sorted(
+    #         contours,
+    #         key=lambda cont: np.max(cont[:, 0, 1]),
+    #         reverse=True,
+    #     )
+
+    #     topLShape = contours[-1]
+
+    #     # Find a bbox around top L shape
+    #     bbox = cv2.boundingRect(topLShape)
+    #     x, y, w, h = bbox
+
+    #     def points_from_boundingRect(x, y, w, h):
+    #         points = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
+
+    #         return points
+
+    #     # Split bbox into two along short edge
+    #     boxL = np.intp(points_from_boundingRect(x, y, w / 2, h))
+    #     boxR = np.intp(points_from_boundingRect(x + w / 2, y, w / 2, h))
+
+    #     # Find the mean pixel value within each smaller rect
+    #     maskL = cv2.fillPoly(np.zeros_like(img2), [boxL], (255, 255, 255)).astype(
+    #         np.uint8
+    #     )
+    #     maskR = cv2.fillPoly(np.zeros_like(img2), [boxR], (255, 255, 255)).astype(
+    #         np.uint8
+    #     )
+
+    #     meanL = cv2.mean(img2, mask=maskL)
+    #     meanR = cv2.mean(img2, mask=maskR)
+
+    #     # LR orientation swap if required
+    #     if meanL < meanR:
+    #         # print("Performing LR orientation swap to restore correct view.")
+    #         flipped_images = [np.fliplr(image) for image in self.images]
+    #         for index, dcm in enumerate(self.dcms):
+    #             dcm.PixelData = flipped_images[index].tobytes()
+    #         self.images = flipped_images
+    #     else:
+    #         pass
+    #         # print("LR orientation swap not required.")
+
+    # def determine_rotation(self):
+    #     """
+    #     Determine the rotation angle of the phantom using edge detection and the Hough transform.
+
+    #     Returns
+    #     ------
+    #     rot_angle : float
+    #         The rotation angle in degrees.
+    #     """
+
+    #     thresh = cv2.threshold(self.images[0], 127, 255, cv2.THRESH_BINARY)[1]
+    #     if (
+    #         self.MediumACRPhantom is True
+    #     ):  # the above thresh doesnt work for the med phantom (not sure why but maybe it shouldnt be a flat thresh anyway...)
+    #         thresh = cv2.threshold(
+    #             self.images[0], np.max(self.images[0]) * 0.25, 255, cv2.THRESH_BINARY
+    #         )[1]
+
+    #     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    #     dilate = cv2.morphologyEx(thresh, cv2.MORPH_DILATE, kernel)
+    #     diff = cv2.absdiff(dilate, thresh)
+
+    #     h, theta, d = skimage.transform.hough_line(diff)
+    #     _, angles, _ = skimage.transform.hough_line_peaks(h, theta, d)
+
+    #     # angle = np.rad2deg(scipy.stats.mode(angles)[0][0]) #This needs as specific version of scipy or you get an error (drop the last [0])
+    #     angle = np.rad2deg(
+    #         scipy.stats.mode(angles)[0]
+    #     )  # This needs as specific version of scipy or you get an error (drop the last [0])
+    #     rot_angle = angle + 90 if angle < 0 else angle - 90
+    #     return rot_angle
+
+    # def rotate_images(self):
+    #     """
+    #     Rotate the images by a specified angle. The value range and dimensions of the image are preserved.
+
+    #     Returns
+    #     -------
+    #     np.array:
+    #         The rotated images.
+    #     """
+
+    #     return skimage.transform.rotate(
+    #         self.images, self.rot_angle, resize=False, preserve_range=True
+    #     )
+
+    # def get_mask_image(self, image, mag_threshold=0.05, open_threshold=500):
+    #     """Create a masked pixel array
+    #     Mask an image by magnitude threshold before applying morphological opening to remove small unconnected
+    #     features. The convex hull is calculated in order to accommodate for potential air bubbles.
+
+    #     Args:
+    #         image (_type_): _description_
+    #         mag_threshold (float, optional): magnitude threshold. Defaults to 0.05.
+    #         open_threshold (int, optional): open threshold. Defaults to 500.
+
+    #     Returns:
+    #         np.array:
+    #             The masked image.
+    #     """
+    #     test_mask = self.circular_mask(
+    #         self.centre, (80 // self.pixel_spacing[0]), image.shape
+    #     )
+
+    #     test_image = image * test_mask
+    #     test_vals = test_image[np.nonzero(test_image)]
+    #     if np.percentile(test_vals, 80) - np.percentile(test_vals, 10) > 0.9 * np.max(
+    #         image
+    #     ):
+    #         print(
+    #             "Large intensity variations detected in image. Using local thresholding!"
+    #         )
+    #         initial_mask = skimage.filters.threshold_sauvola(
+    #             image, window_size=3, k=0.95
+    #         )
+    #     else:
+    #         initial_mask = image > mag_threshold * np.max(image)
+
+    #     opened_mask = skimage.morphology.area_opening(
+    #         initial_mask, area_threshold=open_threshold
+    #     )
+    #     final_mask = skimage.morphology.convex_hull_image(opened_mask)
+
+    #     return final_mask

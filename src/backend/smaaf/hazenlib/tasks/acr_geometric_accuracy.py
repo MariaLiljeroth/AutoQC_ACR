@@ -162,8 +162,8 @@ class ACRGeometricAccuracy(HazenTask):
             tuple of floats: horizontal and vertical distances, as well as diagonals (SW, SE)
         """
         img = dcm.pixel_array
-        mask = self.ACR_obj.get_mask_image(self.ACR_obj.images[6])
         cxy = self.ACR_obj.centre
+        mask = self.ACR_obj.circular_mask(cxy, self.ACR_obj.radius, img.shape)
 
         length_dict = self.ACR_obj.measure_orthogonal_lengths(mask)
         sw_dict, se_dict = self.diagonal_lengths(mask, cxy, dcm)

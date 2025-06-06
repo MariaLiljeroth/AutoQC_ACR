@@ -44,14 +44,15 @@ class ACRUniformity(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Initialise results dictionary
+        dcm_unif = self.ACR_obj.dcms[4]
         results = self.init_result_dict()
-        results["file"] = self.img_desc(self.ACR_obj.dcms[4])
+        results["file"] = self.img_desc(dcm_unif)
 
         try:
             # result = self.get_integral_uniformity(self.ACR_obj.slice7_dcm)
             # results["measurement"] = {"integral uniformity %": round(result, 2)}
             unif, max_roi, min_roi, max_pos, min_pos = self.get_integral_uniformity(
-                self.ACR_obj.dcms[4]
+                dcm_unif
             )
             results["measurement"] = {
                 "integral uniformity %": round(unif, 2),
@@ -61,12 +62,12 @@ class ACRUniformity(HazenTask):
                 "min pos": min_pos,
             }
             print(
-                f"{self.img_desc(self.ACR_obj.slice7_dcm)}: Percentage integral uniformity calculated."
+                f"{self.img_desc(dcm_unif)}: Percentage integral uniformity calculated."
             )
 
         except Exception as e:
             print(
-                f"{self.img_desc(self.ACR_obj.slice7_dcm)}: Could not calculate percentage integral uniformity because of: {e}"
+                f"{self.img_desc(dcm_unif)}: Could not calculate percentage integral uniformity because of: {e}"
             )
             # traceback.print_exc(file=sys.stdout)
 

@@ -45,8 +45,8 @@ class ACRSliceThickness(HazenTask):
 
             fitted = self._fit_piecewise_sigmoid()
 
-            peaks, props = find_peaks(
-                fitted.y, height=0, prominence=np.max(fitted.y).item() / 4
+            _, props = find_peaks(
+                fitted.y, height=0, prominence=np.ptp(fitted.y).item() / 4
             )
             peak_height = np.max(props["peak_heights"])
 
@@ -103,10 +103,11 @@ class ACRSliceThickness(HazenTask):
                 p0 = [A, k, x0, b]
 
                 def sigmoid(x, A, k, x0, b):
-                    exp_term = np.exp(-k * (x - x0))
+                    exponent = np.clip(-k * (x - x0), -500, 500)
+                    exp_term = np.exp(exponent)
                     return A / (1 + exp_term) + b
 
-                popt, _ = curve_fit(sigmoid, fitData.x, fitData.y, p0=p0)
+                popt, _ = curve_fit(sigmoid, fitData.x, fitData.y, p0=p0, maxfev=10000)
 
                 def specific_sigmoid(x):
                     return sigmoid(x, *popt)
@@ -181,16 +182,19 @@ class ACRSliceThickness(HazenTask):
         Returns:
             float: measured slice thickness.
         """
-        img = dcm.pixel_array
+        image = dcm.pixel_array
+        mask = self.ACR_obj.masks[0]
+
         interp_factor = 4
         interp_pixel_mm = [dist / interp_factor for dist in self.ACR_obj.pixel_spacing]
-        img = cv2.resize(
-            img,
-            tuple([interp_factor * dim for dim in img.shape]),
-            interpolation=cv2.INTER_CUBIC,
-        )
 
-        lines = self.place_lines(img)
+        new_dims = tuple([interp_factor * dim for dim in image.shape])
+
+        image = cv2.resize(image, new_dims, interpolation=cv2.INTER_CUBIC)
+        mask = cv2.resize(mask, new_dims, interpolation=cv2.INTER_NEAREST)
+
+        lines = self.place_lines(image, mask)
+
         for line in lines:
             line.get_FWHM()
             line.FWHM *= np.mean(interp_pixel_mm)
@@ -201,7 +205,7 @@ class ACRSliceThickness(HazenTask):
         if self.report:
 
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
-            axes[0].imshow(img)
+            axes[0].imshow(image)
             for i, line in enumerate(lines):
                 axes[0].plot([line.start.x, line.end.x], [line.start.y, line.end.y])
                 axes[i + 1].plot(
@@ -231,82 +235,57 @@ class ACRSliceThickness(HazenTask):
             axes[2].set_ylabel("Pixel value")
             plt.tight_layout()
 
-            img_path = os.path.realpath(
+            image_path = os.path.realpath(
                 os.path.join(
                     self.report_path, f"{self.img_desc(dcm)}_slice_thickness.png"
                 )
             )
 
-            fig.savefig(img_path, dpi=600)
+            fig.savefig(image_path, dpi=600)
             plt.close()
-            self.report_files.append(img_path)
+            self.report_files.append(image_path)
 
         return slice_thickness
 
-    def place_lines(self, img: np.ndarray) -> list["Line"]:
+    def place_lines(self, image: np.ndarray, mask: np.ndarray) -> list["Line"]:
         """Places line on image within ramps insert.
         Works for a rotated phantom.
 
         Args:
-            img (np.ndarray): Pixel array from DICOM image.
+            image (np.ndarray): Pixel array from DICOM image.
 
         Returns:
             finalLines (list): A list of the two lines as Line objects.
         """
-        # Normalize to uint8, enhance contast and binarize using otsu thresh
 
-        img_uint8 = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        contrastEnhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(3, 3)).apply(
-            img_uint8
-        )
-        _, img_binary = cv2.threshold(
-            contrastEnhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        # Find contour by x-span sort
-        contours, _ = cv2.findContours(
-            img_binary.astype(np.uint8),
-            mode=cv2.RETR_TREE,
-            method=cv2.CHAIN_APPROX_NONE,
-        )
-
-        def get_aspect_ratio(contour):
-            _, (width, height), _ = cv2.minAreaRect(contour)
-            return min(width, height) / max(width, height)
-
-        # filter out tiny contours from noise
-        threshArea = 15 * 15
-        contours = [cont for cont in contours if cv2.contourArea(cont) >= threshArea]
-        # select central insert
-        contours_sorted = sorted(
-            contours,
-            key=lambda c: get_aspect_ratio(c),
-        )
-        insertContour = contours_sorted[0]
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        insert = [
+            c for c in contours if self.ACR_obj.is_slice_thickness_insert(c, mask.shape)
+        ][0]
 
         # Create list of Point objects for the four corners of the contour
-        insertCorners = cv2.boxPoints(cv2.minAreaRect(insertContour))
-        corners = [Point(*p) for p in insertCorners]
+        corners = cv2.boxPoints(cv2.minAreaRect(insert))
+        corners = [Point(*p) for p in corners]
 
         # Define short sides of contours by list of line objects
         corners = sorted(corners, key=lambda point: corners[0].get_distance_to(point))
-        shortSides = [Line(*corners[:2]), Line(*corners[2:])]
+        short_sides = [Line(*corners[:2]), Line(*corners[2:])]
 
         # Get sublines of short sides and force start point to be higher in y
-        sublines = [line.get_subline(perc=30) for line in shortSides]
+        sublines = [line.get_subline(perc=30) for line in short_sides]
         for line in sublines:
             if line.start.y < line.end.y:
                 line.point_swap()
 
         # Define connecting lines
-        connectingLines = [
+        connecting_lines = [
             self.SignalLine(sublines[0].start, sublines[1].start),
             self.SignalLine(sublines[0].end, sublines[1].end),
         ]
 
         # Final lines are sublines of connecting lines
-        finalLines = [line.get_subline(perc=95) for line in connectingLines]
-        for line in finalLines:
-            line.get_signal(img)
+        final_lines = [line.get_subline(perc=95) for line in connecting_lines]
+        for line in final_lines:
+            line.get_signal(image)
 
-        return finalLines
+        return final_lines

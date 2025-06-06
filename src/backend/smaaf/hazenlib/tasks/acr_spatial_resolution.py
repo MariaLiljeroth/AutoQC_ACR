@@ -26,7 +26,7 @@ class ACRSpatialResolution(HazenTask):
     Inherits from HazenTask class
     """
 
-    TARGET_THETA_BAR = 3
+    TARGET_THETA_INSERT = 3
     SIZE_ROI = 10
 
     def __init__(self, **kwargs):
@@ -54,8 +54,8 @@ class ACRSpatialResolution(HazenTask):
         return results
 
     def get_mtf50(self, dcm):
-        self.img_orig = dcm.pixel_array
-        self.roi, self.roi_centre, self.roi_bounds, self.img_rotated = self.get_roi()
+        self.image_orig = dcm.pixel_array
+        self.roi, self.roi_centre, self.roi_bounds, self.image_rotated = self.get_roi()
 
         self.esf = self.get_esf_raw()
         self.esf_fitted = self.get_esf_fitted()
@@ -92,7 +92,7 @@ class ACRSpatialResolution(HazenTask):
             y2_roi_in_display = y2_display_frame - y1_display_frame - DISPLAY_PAD
 
             axes[0].imshow(
-                self.img_rotated[
+                self.image_rotated[
                     y1_display_frame:y2_display_frame, x1_display_frame:x2_display_frame
                 ],
             )
@@ -112,20 +112,20 @@ class ACRSpatialResolution(HazenTask):
             axes[1].set_ylabel("Pixel value")
             axes[1].legend()
 
-            axes[2].scatter(self.lsf[0], self.lsf[1], label="LSF")
+            # axes[2].scatter(self.lsf[0], self.lsf[1], label="LSF")
             axes[2].plot(self.lsf_fitted[0], self.lsf_fitted[1], label="LSF fitted")
             axes[2].set_xlabel("Perpendicular distance from edge (mm)")
             axes[2].set_ylabel("Pixel value gradient")
             axes[2].legend()
 
-            axes[3].scatter(self.mtf[0], self.mtf[1], label="MTF")
+            # axes[3].scatter(self.mtf[0], self.mtf[1], label="MTF")
             axes[3].plot(self.mtf_fitted[0], self.mtf_fitted[1], label="MTF fitted")
             axes[3].set_xlabel("Spatial frequency (mm^-1)")
             axes[3].set_ylabel("MTF")
             axes[3].set_xlim(0, mtf05)
             axes[3].legend()
 
-            img_path = os.path.realpath(
+            image_path = os.path.realpath(
                 os.path.join(
                     self.report_path,
                     f"{self.img_desc(dcm)}_spatial_resolution.png",
@@ -133,37 +133,51 @@ class ACRSpatialResolution(HazenTask):
             )
 
             fig.tight_layout()
-            fig.savefig(img_path, dpi=600)
+            fig.savefig(image_path, dpi=600)
             plt.close()
-            self.report_files.append(img_path)
+            self.report_files.append(image_path)
 
         return mtf50
 
     def get_roi(self):
-        contour_bar = self.ACR_obj.get_contour_bar(self.img_orig)
-        img_rotated = self.rotate_rel_to_bar(contour_bar)
-        contour_bar_rotated = self.ACR_obj.get_contour_bar(img_rotated)
-        roi_centre = self.define_ROI_centre(contour_bar_rotated)
+        mask = self.ACR_obj.masks[0]
+
+        def get_insert_contour(mask):
+            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            insert = [
+                c
+                for c in contours
+                if self.ACR_obj.is_slice_thickness_insert(c, mask.shape)
+            ][0]
+            return insert
+
+        insert = get_insert_contour(mask)
+        image_rotated = self.rotate_rel_to_insert(self.image_orig, insert)
+        mask_rotated = self.rotate_rel_to_insert(mask, insert)
+
+        insert_rotated = get_insert_contour(mask_rotated)
+        roi_centre = self.define_ROI_centre(insert_rotated)
 
         x1 = int(roi_centre[0] - self.SIZE_ROI // 2)
         x2 = int(roi_centre[0] + self.SIZE_ROI // 2)
         y1 = int(roi_centre[1] - self.SIZE_ROI // 2)
         y2 = int(roi_centre[1] + self.SIZE_ROI // 2)
 
-        roi = img_rotated[y1:y2, x1:x2]
+        roi = image_rotated[y1:y2, x1:x2]
 
-        return roi, roi_centre, (x1, x2, y1, y2), img_rotated
+        return roi, roi_centre, (x1, x2, y1, y2), image_rotated
 
-    def rotate_rel_to_bar(self, contour_bar) -> np.ndarray:
-        _, (w, h), theta = cv2.minAreaRect(contour_bar)
+    @classmethod
+    def rotate_rel_to_insert(cls, image, insert) -> np.ndarray:
+        _, (w, h), theta = cv2.minAreaRect(insert)
         if w < h:
             theta = theta - 90
 
-        theta_to_apply = theta - self.TARGET_THETA_BAR
+        theta_to_apply = theta - cls.TARGET_THETA_INSERT
 
-        (img_h, img_w) = self.img_orig.shape[:2]
+        (image_h, image_w) = image.shape[:2]
         # Calculate the center of the image
-        center = (img_w // 2, img_h // 2)
+        center = (image_w // 2, image_h // 2)
 
         # Calculate the rotation matrix
         matrix = cv2.getRotationMatrix2D(center, theta_to_apply, 1.0)
@@ -173,26 +187,26 @@ class ACRSpatialResolution(HazenTask):
         abs_sin = abs(matrix[0, 1])
 
         # Calculate the new width and height
-        new_w = int(img_h * abs_sin + img_w * abs_cos)
-        new_h = int(img_h * abs_cos + img_w * abs_sin)
+        new_w = int(image_h * abs_sin + image_w * abs_cos)
+        new_h = int(image_h * abs_cos + image_w * abs_sin)
 
         # Adjust the rotation matrix to account for translation (shifting the image to prevent clipping)
         matrix[0, 2] += (new_w / 2) - center[0]
         matrix[1, 2] += (new_h / 2) - center[1]
 
         # Rotate the image and resize it to the new size (without clipping)
-        img_rotated = cv2.warpAffine(
-            self.img_orig,
+        image_rotated = cv2.warpAffine(
+            image,
             matrix,
             (new_w, new_h),
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_REPLICATE,
         )
-        return img_rotated
+        return image_rotated
 
     @staticmethod
-    def define_ROI_centre(contour_bar_rotated):
-        corners = np.intp(cv2.boxPoints(cv2.minAreaRect(contour_bar_rotated)))
+    def define_ROI_centre(insert_rotated):
+        corners = np.intp(cv2.boxPoints(cv2.minAreaRect(insert_rotated)))
         test_point = corners[0]
         centre = np.intp(
             np.mean(
@@ -209,7 +223,7 @@ class ACRSpatialResolution(HazenTask):
         return centre
 
     def get_esf_raw(self):
-        theta_rad = np.deg2rad(self.TARGET_THETA_BAR)
+        theta_rad = np.deg2rad(self.TARGET_THETA_INSERT)
 
         normal_x = -np.sin(theta_rad)
         normal_y = np.cos(theta_rad)
@@ -272,9 +286,9 @@ if __name__ == "__main__":
     obj.run()
 
 # @classmethod
-# def get_res_matrix(cls, img):
-#     contour = cls.locate_insert(img)
-#     res_matrix = cls.crop_within_contour_axis_aligned(img, contour)
+# def get_res_matrix(cls, image):
+#     contour = cls.locate_insert(image)
+#     res_matrix = cls.crop_within_contour_axis_aligned(image, contour)
 #     return res_matrix
 
 # @staticmethod
