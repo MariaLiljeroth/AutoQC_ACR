@@ -222,7 +222,19 @@ class ACRObject:
                 _, mask = cv2.threshold(
                     image, dynamic_thresh + pad, 255, cv2.THRESH_BINARY
                 )
-                return mask
+
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+                    mask, connectivity=8
+                )
+                min_connected_pixels = image.size // 100
+
+                filtered_mask = np.zeros_like(mask)
+                for label in range(1, num_labels):
+                    area = stats[label, cv2.CC_STAT_AREA]
+                    if area >= min_connected_pixels:
+                        filtered_mask[labels == label] = 255
+
+                return filtered_mask
 
             dynamic_thresh += 2
 
@@ -319,6 +331,35 @@ class ACRObject:
 
         return centre, radius
 
+    @staticmethod
+    def circular_mask(centre, radius, dims):
+        """
+        Creates a perfectly circular mask of the phantom.
+
+        Parameters
+        ----------
+        centre : tuple
+            The centre coordinates of the circular mask.
+        radius : int
+            The radius of the circular mask.
+        dims   : tuple
+            The dimensions of the circular mask.
+
+        Returns
+        -------
+        mask : np.array
+            Circular mask of the phantom.
+        """
+        # Define a circular logical mask
+
+        x = np.linspace(0, dims[0] - 1, dims[0])
+        y = np.linspace(0, dims[1] - 1, dims[1])
+
+        X, Y = np.meshgrid(x, y)
+        mask = (X - centre[0]) ** 2 + (Y - centre[1]) ** 2 <= radius**2
+
+        return mask
+
     def measure_orthogonal_lengths(self, mask):
         """
         Compute the horizontal and vertical lengths of a mask, based on the centroid.
@@ -373,33 +414,33 @@ class ACRObject:
 
         return length_dict
 
-    # @staticmethod
-    # def rotate_point(origin, point, angle):
-    #     """
-    #     Compute the horizontal and vertical lengths of a mask, based on the centroid.
+    @staticmethod
+    def rotate_point(origin, point, angle):
+        """
+        Compute the horizontal and vertical lengths of a mask, based on the centroid.
 
-    #     Parameters:
-    #     ----------
-    #     origin : tuple
-    #         The coordinates of the point around which the rotation is performed.
-    #     point  : tuple
-    #         The coordinates of the point to rotate.
-    #     angle  : int
-    #         Angle in degrees.
+        Parameters:
+        ----------
+        origin : tuple
+            The coordinates of the point around which the rotation is performed.
+        point  : tuple
+            The coordinates of the point to rotate.
+        angle  : int
+            Angle in degrees.
 
-    #     Returns:
-    #     ----------
-    #     x_prime : float
-    #         A float representing the x coordinate of the desired point after being rotated around an origin.
-    #     y_prime : float
-    #         A float representing the y coordinate of the desired point after being rotated around an origin.
-    #     """
-    #     theta = np.radians(angle)
-    #     c, s = np.cos(theta), np.sin(theta)
+        Returns:
+        ----------
+        x_prime : float
+            A float representing the x coordinate of the desired point after being rotated around an origin.
+        y_prime : float
+            A float representing the y coordinate of the desired point after being rotated around an origin.
+        """
+        theta = np.radians(angle)
+        c, s = np.cos(theta), np.sin(theta)
 
-    #     x_prime = origin[0] + c * (point[0] - origin[0]) - s * (point[1] - origin[1])
-    #     y_prime = origin[1] + s * (point[0] - origin[0]) + c * (point[1] - origin[1])
-    #     return x_prime, y_prime
+        x_prime = origin[0] + c * (point[0] - origin[0]) - s * (point[1] - origin[1])
+        y_prime = origin[1] + s * (point[0] - origin[0]) + c * (point[1] - origin[1])
+        return x_prime, y_prime
 
     # @staticmethod
     # def find_n_highest_peaks(data, n, height=1):
@@ -595,37 +636,3 @@ class ACRObject:
     #     final_mask = skimage.morphology.convex_hull_image(opened_mask)
 
     #     return final_mask
-
-    # @staticmethod
-    # def circular_mask(centre, radius, dims):
-    #     """
-    #     Sort a stack of images based on slice position.
-
-    #     Parameters
-    #     ----------
-    #     centre : tuple
-    #         The centre coordinates of the circular mask.
-    #     radius : int
-    #         The radius of the circular mask.
-    #     dims   : tuple
-    #         The dimensions of the circular mask.
-
-    #     Returns
-    #     -------
-    #     img_stack : np.array
-    #         A sorted stack of images, where each image is represented as a 2D numpy array.
-    #     """
-    #     # Define a circular logical mask
-
-    #     # BugFix, should this not start at 0?
-    #     x = np.linspace(0, dims[0] - 1, dims[0])
-    #     y = np.linspace(0, dims[1] - 1, dims[1])
-
-    #     # This is the old code
-    #     # x = np.linspace(1, dims[0], dims[0])
-    #     # y = np.linspace(1, dims[1], dims[1])
-
-    #     X, Y = np.meshgrid(x, y)
-    #     mask = (X - centre[0]) ** 2 + (Y - centre[1]) ** 2 <= radius**2
-
-    #     return mask
