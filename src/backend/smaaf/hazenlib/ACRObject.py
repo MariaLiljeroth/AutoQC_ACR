@@ -28,7 +28,10 @@ class ACRObject:
         self.dcm_list = dcm_list
 
         # Load files as DICOM and their pixel arrays into 'images'
-        self.images, self.dcms, self.masks = self.sort_images()
+        self.images, self.dcms = self.sort_images()
+
+        # Create empty masks to fill later where required
+        self.masks = [None] * len(self.images)
 
         # Store the pixel spacing value from the first image (expected to be the same for all)
         if "PixelSpacing" in self.dcms[0]:
@@ -38,10 +41,14 @@ class ACRObject:
                 if elem.tag == (0x28, 0x30):
                     self.pixel_spacing = elem.value
 
-        # Check slice order of images and whether images need to be flipped LR.
-        self.slice_order_checks()
-        self.centre, self.radius = self.find_phantom_center()
+        # Check slice order of images and reverse if necessary. Mask of uniformity slice (slice 4) is also stored.
+        self.masks[4] = self.slice_order_checks()
+
+        # Get mask of slice thickness slice (slice 0)
         self.masks[0] = self.get_mask_slice_0()
+
+        # Finds phantom centre
+        self.centre, self.radius = self.find_phantom_center()
 
         if "Localiser" in kwargs.keys():
             self.LocalisierDCM = dcmread(kwargs["Localiser"])
@@ -125,9 +132,8 @@ class ACRObject:
             apply_modality_lut(dicom.pixel_array, dicom).astype("uint16")
             for dicom in dicom_stack
         ]
-        mask_stack = [None] * len(img_stack)
 
-        return img_stack, dicom_stack, mask_stack
+        return img_stack, dicom_stack
 
     def slice_order_checks(self):
         """
@@ -166,7 +172,7 @@ class ACRObject:
             else:
                 raise RuntimeError("Slice order checks failed.")
 
-        self.masks[4] = mask
+        return mask
 
     @classmethod
     def get_dynamic_mask_image(cls, image, additional_contour_check=None):
@@ -271,6 +277,26 @@ class ACRObject:
             ]
         )
 
+    def get_mask_slice_0(self):
+        image_0 = self.images[0]
+        mask = self.get_dynamic_mask_image(
+            image_0, lambda c: self.is_slice_thickness_insert(c, image_0.shape)
+        )
+        return mask
+
+    @staticmethod
+    def is_slice_thickness_insert(contour, source_image_shape):
+        height_image, width_image = source_image_shape
+        _, (width, height), _ = cv2.minAreaRect(contour)
+
+        if width < height:
+            width, height = height, width
+
+        width_check = 0.55 * width_image <= width <= 0.75 * width_image
+        height_check = 0.02 * height_image <= height <= 0.06 * height_image
+
+        return width_check and height_check
+
     def find_phantom_center(self):
         """
         Finds the phantom center and radius
@@ -292,24 +318,6 @@ class ACRObject:
         centre, radius = cv2.minEnclosingCircle(phantom_edge)
 
         return centre, radius
-
-    def get_mask_slice_0(self):
-        image_0 = self.images[0]
-
-        def is_slice_thickness_insert(contour):
-            height_image, width_image = image_0.shape
-            _, (width, height), _ = cv2.minAreaRect(contour)
-
-            if width < height:
-                width, height = height, width
-
-            width_check = 0.55 * width_image <= width <= 0.75 * width_image
-            height_check = 0.02 * height_image <= height <= 0.06 * height_image
-
-            return width_check and height_check
-
-        mask = self.get_dynamic_mask_image(image_0, is_slice_thickness_insert)
-        return mask
 
     def measure_orthogonal_lengths(self, mask):
         """
