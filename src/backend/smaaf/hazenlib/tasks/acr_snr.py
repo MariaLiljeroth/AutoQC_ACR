@@ -60,16 +60,18 @@ class ACRSNR(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Identify relevant slice
-        snr_dcm = self.ACR_obj.dcms[4]
+        dcm_snr = self.ACR_obj.dcms[4]
+        mask_snr = self.ACR_obj.masks[4]
+
         # Initialise results dictionary
         results = self.init_result_dict()
 
         # SINGLE METHOD (SMOOTHING)
         if self.subtract is None:
             try:
-                results["file"] = self.img_desc(snr_dcm)
+                results["file"] = self.img_desc(dcm_snr)
                 snr, normalised_snr, signal, noise, col, row = self.snr_by_smoothing(
-                    snr_dcm, self.measured_slice_width
+                    dcm_snr, mask_snr, self.measured_slice_width
                 )
                 results["measurement"]["snr by smoothing"] = {
                     "measured": round(snr, 2),
@@ -79,11 +81,11 @@ class ACRSNR(HazenTask):
                     "centre y": row,
                     "centre x": col,
                 }
-                print(f"{self.img_desc(snr_dcm)}: SNR calculated.")
+                print(f"{self.img_desc(dcm_snr)}: SNR calculated.")
 
             except Exception as e:
                 print(
-                    f"{self.img_desc(snr_dcm)}: Could not calculate SNR because of: {e}"
+                    f"{self.img_desc(dcm_snr)}: Could not calculate SNR because of: {e}"
                 )
                 # traceback.print_exc(file=sys.stdout)
 
@@ -96,21 +98,25 @@ class ACRSNR(HazenTask):
                 if os.path.isfile(os.path.join(self.subtract, f))
             ]
             data2 = [pydicom.dcmread(dicom) for dicom in filepaths]
-            snr_dcm2 = ACRObject(data2).dcms[4]
-            results["file"] = [self.img_desc(snr_dcm), self.img_desc(snr_dcm2)]
+
+            ACR_obj_2 = ACRObject(data2)
+            dcm_snr2 = ACR_obj_2.dcms[4]
+            mask_snr2 = ACR_obj_2.masks[4]
+            results["file"] = [self.img_desc(dcm_snr), self.img_desc(dcm_snr2)]
             try:
                 snr, normalised_snr = self.snr_by_subtraction(
-                    snr_dcm, snr_dcm2, self.measured_slice_width
+                    dcm_snr, mask_snr, dcm_snr2, mask_snr2, self.measured_slice_width
                 )
 
                 results["measurement"]["snr by subtraction"] = {
                     "measured": round(snr, 2),
                     "normalised": round(normalised_snr, 2),
                 }
+                print(f"{self.img_desc(dcm_snr)}: SNR calculated.")
             except Exception as e:
                 print(
-                    f"Could not calculate the SNR for {self.img_desc(snr_dcm)} and "
-                    f"{self.img_desc(snr_dcm2)} because of : {e}"
+                    f"Could not calculate the SNR for {self.img_desc(dcm_snr)} and "
+                    f"{self.img_desc(dcm_snr2)} because of : {e}"
                 )
                 # traceback.print_exc(file=sys.stdout)
 
@@ -255,7 +261,7 @@ class ACRSNR(HazenTask):
         return sample
 
     def snr_by_smoothing(
-        self, dcm: pydicom.Dataset, measured_slice_width=None
+        self, dcm: pydicom.Dataset, mask: "Mask", measured_slice_width=None
     ) -> float:
         """Calculate signal to noise ratio based on smoothing method
 
@@ -266,7 +272,7 @@ class ACRSNR(HazenTask):
         Returns:
             float: normalised_snr
         """
-        centre = self.ACR_obj.centre
+        centre = mask.centre
         col, row = centre
 
         noise_img = self.get_noise_image(dcm)
@@ -301,7 +307,7 @@ class ACRSNR(HazenTask):
             axes[0].scatter(centre[0], centre[1], c="red")
             axes[0].set_title("Centroid Location")
             circle1 = plt.Circle(
-                (centre[0], centre[1]), self.ACR_obj.radius, color="r", fill=False
+                (centre[0], centre[1]), mask.radius, color="r", fill=False
             )
             axes[0].add_patch(circle1)
 
@@ -326,7 +332,12 @@ class ACRSNR(HazenTask):
         )
 
     def snr_by_subtraction(
-        self, dcm1: pydicom.Dataset, dcm2: pydicom.Dataset, measured_slice_width=None
+        self,
+        dcm1: pydicom.Dataset,
+        mask_snr: "Mask",
+        dcm2: pydicom.Dataset,
+        mask_snr2: "Mask",
+        measured_slice_width=None,
     ) -> float:
         """Calculate signal to noise ratio based on subtraction method
 
@@ -338,8 +349,11 @@ class ACRSNR(HazenTask):
         Returns:
             float: normalised_snr
         """
-        centre = self.ACR_obj.centre
-        col, row = centre
+        centre1 = mask_snr.centre
+        centre2 = mask_snr2.centre
+
+        col1, row1 = centre1
+        col2, row2 = centre2
 
         difference = np.subtract(
             apply_modality_lut(dcm1.pixel_array, dcm1).astype("int"),
@@ -351,14 +365,14 @@ class ACRSNR(HazenTask):
         signal = [
             np.mean(roi)
             for roi in self.get_roi_samples(
-                ax=None, dcm=dcm1, centre_col=int(col), centre_row=int(row)
+                ax=None, dcm=dcm1, centre_col=int(col1), centre_row=int(row1)
             )
         ]
         noise = np.divide(
             [
                 np.std(roi, ddof=1)
                 for roi in self.get_roi_samples(
-                    ax=None, dcm=difference, centre_col=int(col), centre_row=int(row)
+                    ax=None, dcm=difference, centre_col=int(col2), centre_row=int(row2)
                 )
             ],
             np.sqrt(2),
@@ -377,7 +391,7 @@ class ACRSNR(HazenTask):
             fig.tight_layout(pad=4)
 
             axes[0].imshow(dcm1.pixel_array)
-            axes[0].scatter(centre[0], centre[1], c="red")
+            axes[0].scatter(centre1[0], centre1[1], c="red")
             axes[0].axis("off")
             axes[0].set_title("Centroid Location")
 
@@ -386,7 +400,7 @@ class ACRSNR(HazenTask):
                 difference,
                 cmap="gray",
             )
-            self.get_roi_samples(axes[1], dcm1, int(col), int(row))
+            self.get_roi_samples(axes[1], dcm1, int(col1), int(row1))
             axes[1].axis("off")
 
             img_path = os.path.realpath(

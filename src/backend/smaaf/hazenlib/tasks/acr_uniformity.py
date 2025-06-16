@@ -45,6 +45,8 @@ class ACRUniformity(HazenTask):
         """
         # Initialise results dictionary
         dcm_unif = self.ACR_obj.dcms[4]
+        mask_unif = self.ACR_obj.masks[4]
+
         results = self.init_result_dict()
         results["file"] = self.img_desc(dcm_unif)
 
@@ -52,7 +54,7 @@ class ACRUniformity(HazenTask):
             # result = self.get_integral_uniformity(self.ACR_obj.slice7_dcm)
             # results["measurement"] = {"integral uniformity %": round(result, 2)}
             unif, max_roi, min_roi, max_pos, min_pos = self.get_integral_uniformity(
-                dcm_unif
+                dcm_unif, mask_unif
             )
             results["measurement"] = {
                 "integral uniformity %": round(unif, 2),
@@ -77,7 +79,7 @@ class ACRUniformity(HazenTask):
 
         return results
 
-    def get_integral_uniformity(self, dcm):
+    def get_integral_uniformity(self, dcm, mask_unif):
         """Calculate the integral uniformity in accordance with ACR guidance.
 
         Args:
@@ -115,7 +117,7 @@ class ACRUniformity(HazenTask):
         )  # Offset distance for rectangular void at top of phantom
         dims = img.shape  # Dimensions of image
 
-        cxy = self.ACR_obj.centre
+        cxy = mask_unif.centre
         base_mask = ACRObject.circular_mask(
             (cxy[0], cxy[1] + d_void), r_small, dims
         )  # Dummy circular mask at
@@ -224,7 +226,7 @@ class ACRUniformity(HazenTask):
             axes[0].imshow(img)
             axes[0].scatter(cxy[0], cxy[1], c="red")
             circle1 = plt.Circle(
-                (cxy[0], cxy[1]), self.ACR_obj.radius, color="r", fill=False
+                (cxy[0], cxy[1]), mask_unif.radius, color="r", fill=False
             )
             axes[0].add_patch(circle1)
             axes[0].axis("off")

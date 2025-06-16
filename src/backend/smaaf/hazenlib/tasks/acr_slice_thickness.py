@@ -29,6 +29,8 @@ from scipy.ndimage import gaussian_filter1d
 from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
 from hazenlib.utils import get_image_orientation, get_dicom_files
+from hazenlib.contour_validation import is_slice_thickness_insert
+from hazenlib.mask import Mask
 from hazenlib.utils import Point, Line, XY
 
 
@@ -191,7 +193,7 @@ class ACRSliceThickness(HazenTask):
         new_dims = tuple([interp_factor * dim for dim in image.shape])
 
         image = cv2.resize(image, new_dims, interpolation=cv2.INTER_CUBIC)
-        mask = cv2.resize(mask, new_dims, interpolation=cv2.INTER_NEAREST)
+        mask = mask.get_scaled_mask(interp_factor)
 
         lines = self.place_lines(image, mask)
 
@@ -258,10 +260,9 @@ class ACRSliceThickness(HazenTask):
             finalLines (list): A list of the two lines as Line objects.
         """
 
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        insert = [
-            c for c in contours if self.ACR_obj.is_slice_thickness_insert(c, mask.shape)
-        ][0]
+        insert = [c for c in mask.contours if is_slice_thickness_insert(c, mask.shape)][
+            0
+        ]
 
         # Create list of Point objects for the four corners of the contour
         corners = cv2.boxPoints(cv2.minAreaRect(insert))

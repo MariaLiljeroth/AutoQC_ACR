@@ -1,12 +1,15 @@
-import cv2
-import scipy
-import skimage
-import numpy as np
-from pydicom import dcmread
-import matplotlib.pyplot as plt
-from hazenlib.utils import get_image_orientation
-from pydicom.pixel_data_handlers.util import apply_modality_lut
 import os
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+import skimage
+
+from pydicom import dcmread
+from pydicom.pixel_data_handlers.util import apply_modality_lut
+
+from hazenlib.utils import get_image_orientation
+from hazenlib.mask import Mask
+from hazenlib.contour_validation import is_slice_thickness_insert
 
 
 class ACRObject:
@@ -16,13 +19,6 @@ class ACRObject:
         self.MediumACRPhantom = False
         if "MediumACRPhantom" in kwargs.keys():
             self.MediumACRPhantom = kwargs["MediumACRPhantom"]
-
-        """
-        Added in a flag to make use of the dot matrix instead of MTF for spatial res
-        self.UseDotMatrix=False
-        if "UseDotMatrix" in kwargs.keys():
-        self.UseDotMatrix =kwargs["UseDotMatrix"]
-        """
 
         # Initialise an ACR object from a stack of images of the ACR phantom
         self.dcm_list = dcm_list
@@ -47,28 +43,12 @@ class ACRObject:
         # Get mask of slice thickness slice (slice 0)
         self.masks[0] = self.get_mask_slice_0()
 
-        # Finds phantom centre
-        self.centre, self.radius = self.find_phantom_center()
-
         if "Localiser" in kwargs.keys():
             self.LocalisierDCM = dcmread(kwargs["Localiser"])
         else:
             self.LocalisierDCM = None
 
         self.kwargs = kwargs
-
-        # self.LR_orientation_checks()
-
-        # Determine whether image rotation is necessary
-        # self.rot_angle = self.determine_rotation()
-
-        # Store the DCM object of slice 7 as it is used often
-        # self.slice7_dcm = self.dcms[6]
-
-        # Find the centre coordinates of the phantom (circle)
-
-        # Store a mask image of slice 7 for reusability
-        # self.mask_image = self.get_mask_image(self.images[6])
 
     def sort_images(self):
         """
@@ -145,200 +125,32 @@ class ACRObject:
         adjustments are needed to restore the correct slice order.
         """
 
-        def is_uniformity_slice(image):
-            mask = self.get_dynamic_mask_image(image)
-            contours = self.get_contours_from_mask(mask)
+        mask = Mask(self.images[4])
 
-            contours = [
-                c
-                for c in contours
-                if cv2.contourArea(cv2.convexHull(c)) >= (0.1 * mask.shape[0]) ** 2
-            ]
-            bool_check = all([self.is_phantom_edge(c, mask.shape) for c in contours])
-            return bool_check, mask
-
-        bool_check, mask = is_uniformity_slice(self.images[4])
-        if bool_check:
+        if mask.is_uniformity_slice_mask():
             pass
 
         else:
             self.images.reverse()
             self.dcms.reverse()
-            bool_check, mask = is_uniformity_slice(self.images[4])
-            if bool_check:
+
+            mask = Mask(self.images[4])
+            if mask.is_uniformity_slice_mask():
                 pass
             else:
                 raise RuntimeError("Slice order checks failed.")
 
         return mask
 
-    @classmethod
-    def get_dynamic_mask_image(cls, image, additional_contour_check=None):
-        """Creates a mask of the input image.
-        Mask is obtained dynamically be testing for presence of phantom edge at different mask thresholds.
-        Input image should be as noise-free as possible.
-
-        Args:
-            image (np.ndarray): Image to dynamically threshold. Must be 8-bit.
-
-        Returns:
-            np.ndarray: The masked image.
-        """
-        # denoise by fast non-local means denoising (similarity patch search)
-        # h parameter calculated dynamically according to the std of image (gives indicating of noise levels)
-        image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
-        h = np.std(image) * 0.4
-
-        image = cv2.fastNlMeansDenoising(image, h=h)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
-
-        dynamic_thresh = 4
-
-        while dynamic_thresh <= 255:
-            # get mask using dynamic thresholding and get contours.
-            _, mask = cv2.threshold(image, dynamic_thresh, 255, cv2.THRESH_BINARY)
-            contours = cls.get_contours_from_mask(mask)
-
-            # if any contours match expected shape of phantom edge, return mask of image.
-            # returned mask has a pad in threshold for noise safety.
-            phantom_edge_visible = any(
-                [cls.is_phantom_edge(c, mask.shape) for c in contours]
-            )
-
-            additional_contour_visible = (
-                any([additional_contour_check(c) for c in contours])
-                if additional_contour_check is not None
-                else True
-            )
-
-            if phantom_edge_visible and additional_contour_visible:
-                pad = 15
-                _, mask = cv2.threshold(
-                    image, dynamic_thresh + pad, 255, cv2.THRESH_BINARY
-                )
-
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-                    mask, connectivity=8
-                )
-                min_connected_pixels = image.size // 100
-
-                filtered_mask = np.zeros_like(mask)
-                for label in range(1, num_labels):
-                    area = stats[label, cv2.CC_STAT_AREA]
-                    if area >= min_connected_pixels:
-                        filtered_mask[labels == label] = 255
-
-                return filtered_mask
-
-            dynamic_thresh += 2
-
-        raise ValueError("Expected phantom features not detected in mask creation!")
-
-    @staticmethod
-    def get_contours_from_mask(
-        mask,
-        canny_threshold1=30,
-        canny_threshold2=50,
-        dilation_k=3,
-        find_cont_mode=cv2.RETR_TREE,
-    ):
-        canny = cv2.Canny(mask, canny_threshold1, canny_threshold2)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_k, dilation_k))
-        canny = cv2.dilate(canny, kernel)
-
-        contours, _ = cv2.findContours(canny, find_cont_mode, cv2.CHAIN_APPROX_SIMPLE)
-        return contours
-
-    @staticmethod
-    def is_phantom_edge(contour, source_image_shape):
-        # Calculate key raw contour stats
-        rows, cols = source_image_shape
-        epsilon = 1e-10
-
-        # Calculate key convex hull stats
-        hull = cv2.convexHull(contour)
-        M_hull = cv2.moments(hull)
-        area_hull = cv2.contourArea(hull)
-        perimeter_hull = cv2.arcLength(hull, True)
-        cx_hull = M_hull["m10"] / (M_hull["m00"] + epsilon)
-        cy_hull = M_hull["m01"] / (M_hull["m00"] + epsilon)
-
-        # Calculate key min enclosing circle stats
-        _, radius_fit_circ = cv2.minEnclosingCircle(contour)
-        perimeter_fit_circ = 2 * np.pi * radius_fit_circ
-        area_fit_circ = np.pi * radius_fit_circ**2
-
-        # Check stats against expected
-        ratio_area = area_fit_circ / (area_hull + epsilon)
-        area_check = ratio_area <= 1.1
-
-        ratio_x = cx_hull / cols
-        x_check = 0.45 <= ratio_x <= 0.65
-
-        ratio_y = cy_hull / rows
-        y_check = 0.45 <= ratio_y <= 0.65
-
-        ratio_radius = radius_fit_circ / np.mean([rows, cols])
-        radius_check = 1 / 4 <= ratio_radius <= 1 / 2
-
-        ratio_perimeter = perimeter_hull / (perimeter_fit_circ + epsilon)
-        perimeter_check = 0.9 <= ratio_perimeter <= 1.1
-
-        circularity = 4 * np.pi * area_hull / (perimeter_hull + epsilon) ** 2
-        circularity_check = 0.9 <= circularity <= 1.1
-
-        return all(
-            [
-                area_check,
-                x_check,
-                y_check,
-                radius_check,
-                perimeter_check,
-                circularity_check,
-            ]
-        )
-
     def get_mask_slice_0(self):
         image_0 = self.images[0]
-        mask = self.get_dynamic_mask_image(
-            image_0, lambda c: self.is_slice_thickness_insert(c, image_0.shape)
+        mask = Mask(
+            image_0,
+            additional_contour_check=lambda c: is_slice_thickness_insert(
+                c, image_0.shape
+            ),
         )
         return mask
-
-    @staticmethod
-    def is_slice_thickness_insert(contour, source_image_shape):
-        height_image, width_image = source_image_shape
-        _, (width, height), _ = cv2.minAreaRect(contour)
-
-        if width < height:
-            width, height = height, width
-
-        width_check = 0.55 * width_image <= width <= 0.75 * width_image
-        height_check = 0.02 * height_image <= height <= 0.06 * height_image
-
-        return width_check and height_check
-
-    def find_phantom_center(self):
-        """
-        Finds the phantom center and radius
-
-        Returns
-        -------
-        float:
-            The calculated phantom centre
-        float:
-            The calculated phantom radius
-        """
-        mask = self.masks[4]
-        contours = self.get_contours_from_mask(mask, find_cont_mode=cv2.RETR_EXTERNAL)
-
-        # Take the first contour that fits that criteria for the phantom edge.
-        phantom_edge = [c for c in contours if self.is_phantom_edge(c, mask.shape)][0]
-        centre, radius = cv2.minEnclosingCircle(phantom_edge)
-
-        return centre, radius
 
     @staticmethod
     def circular_mask(centre, radius, dims):
@@ -368,60 +180,6 @@ class ACRObject:
         mask = (X - centre[0]) ** 2 + (Y - centre[1]) ** 2 <= radius**2
 
         return mask
-
-    def measure_orthogonal_lengths(self, mask):
-        """
-        Compute the horizontal and vertical lengths of a mask, based on the centroid.
-
-        Parameters:
-        ----------
-        mask    : ndarray of bool
-            Boolean array of the image.
-
-        Returns:
-        ----------
-        length_dict : dict
-            A dictionary containing the following information for both horizontal and vertical line profiles:
-            'Horizontal Start'      | 'Vertical Start' : tuple of int
-                Horizontal/vertical starting point of the object.
-            'Horizontal End'        | 'Vertical End' : tuple of int
-                Horizontal/vertical ending point of the object.
-            'Horizontal Extent'     | 'Vertical Extent' : ndarray of int
-                Indices of the non-zero elements of the horizontal/vertical line profile.
-            'Horizontal Distance'   | 'Vertical Distance' : float
-                The horizontal/vertical length of the object.
-        """
-        dims = mask.shape
-        dx, dy = self.pixel_spacing
-
-        horizontal_start = (self.centre[1], 0)
-        horizontal_end = (self.centre[1], dims[0] - 1)
-        horizontal_line_profile = skimage.measure.profile_line(
-            mask, horizontal_start, horizontal_end
-        )
-        horizontal_extent = np.nonzero(horizontal_line_profile)[0]
-        horizontal_distance = (horizontal_extent[-1] - horizontal_extent[0]) * dx
-
-        vertical_start = (0, self.centre[0])
-        vertical_end = (dims[1] - 1, self.centre[0])
-        vertical_line_profile = skimage.measure.profile_line(
-            mask, vertical_start, vertical_end
-        )
-        vertical_extent = np.nonzero(vertical_line_profile)[0]
-        vertical_distance = (vertical_extent[-1] - vertical_extent[0]) * dy
-
-        length_dict = {
-            "Horizontal Start": horizontal_start,
-            "Horizontal End": horizontal_end,
-            "Horizontal Extent": horizontal_extent,
-            "Horizontal Distance": horizontal_distance,
-            "Vertical Start": vertical_start,
-            "Vertical End": vertical_end,
-            "Vertical Extent": vertical_extent,
-            "Vertical Distance": vertical_distance,
-        }
-
-        return length_dict
 
     @staticmethod
     def rotate_point(origin, point, angle):
