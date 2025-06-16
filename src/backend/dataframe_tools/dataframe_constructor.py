@@ -36,7 +36,7 @@ class DataFrameConstructor:
     def run(self):
         """Constructs the DataFrame and saves it to an Excel file."""
         # Get list of dataframes for each task.
-        tasks = {k for k in self.results.keys()}
+        tasks = list(self.results.keys())
         task_headers = [self.make_row(task.upper()) for task in tasks]
         task_dfs = [self.construct_df_for_task(task) for task in tasks]
         blank_rows = [self.blank_row for _ in range(len(tasks))]
