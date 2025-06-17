@@ -218,9 +218,11 @@ class ACRSNR(HazenTask):
         """
         centre1 = mask_snr.centre
         centre2 = mask_snr2.centre
+        centre_av = (np.mean([a, b]) for a, b in zip(centre1, centre2))
 
         radius1 = mask_snr.radius
         radius2 = mask_snr.radius
+        radius_av = np.mean([radius1, radius2])
 
         difference = np.subtract(
             apply_modality_lut(dcm1.pixel_array, dcm1).astype("int"),
@@ -239,7 +241,7 @@ class ACRSNR(HazenTask):
             [
                 np.std(roi, ddof=1)
                 for roi in self.get_roi_samples(
-                    ax=None, dcm=difference, centre=centre2, phantom_radius=radius2
+                    ax=None, dcm=difference, centre=centre_av, phantom_radius=radius_av
                 )
             ],
             np.sqrt(2),
