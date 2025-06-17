@@ -30,7 +30,6 @@ from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
 from hazenlib.utils import get_image_orientation, get_dicom_files
 from hazenlib.contour_validation import is_slice_thickness_insert
-from hazenlib.mask import Mask
 from hazenlib.utils import Point, Line, XY
 
 

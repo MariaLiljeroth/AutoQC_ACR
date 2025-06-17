@@ -1,11 +1,11 @@
 import numpy as np
 import cv2
-import skimage
+from typing import Self
 
 from hazenlib.contour_validation import is_phantom_edge
 
 
-class Mask(np.ndarray):
+class SliceMask(np.ndarray):
 
     def __new__(cls, image, **kwargs):
         image_thresholded, contours = cls.dynamically_threshold(image, **kwargs)
@@ -125,9 +125,83 @@ class Mask(np.ndarray):
         new_dims = tuple([int(scale_factor * dim) for dim in self.shape])
         scaled_mask = cv2.resize(self, new_dims, interpolation=cv2.INTER_NEAREST)
 
-        obj = np.asarray(scaled_mask).view(Mask)
+        obj = np.asarray(scaled_mask).view(type(self))
         obj.contours = [
             (c.astype(np.float32) * scale_factor).astype(np.int32)
             for c in self.contours
         ]
+        return obj
+
+    def get_rotated_mask(self, theta: float | int) -> Self:
+        # Calculate the rotation matrix
+        M = cv2.getRotationMatrix2D(self.centre, theta, 1.0)
+
+        # get corners coords of self and add a column of ones to make each coord homogenous (so can use with matmul)
+        h, w = self.shape
+        corners = np.array([[0, 0], [w, 0], [w, h], [0, h]])
+        corners = np.hstack([corners, np.ones((4, 1))])
+
+        # rotate corners by rotation matrix
+        M_3x3 = np.vstack([M, [0, 0, 1]])
+        corners_rot = (M_3x3 @ corners.T).T
+
+        # get x and y bounds of rotated corners
+        x_min, y_min, _ = np.min(corners_rot, axis=0)
+        x_max, y_max, _ = np.max(corners_rot, axis=0)
+
+        # get new dims for rotated image
+        w_new = int(np.ceil(x_max - x_min))
+        h_new = int(np.ceil(y_max - y_min))
+
+        # Adjust the rotation matrix to account for translation (shifting the image to prevent clipping)
+        M[0, 2] -= x_min
+        M[1, 2] -= y_min
+
+        # Rotate the image and resize it to the new size (without clipping)
+        mask_rotated = cv2.warpAffine(
+            self,
+            M,
+            (w_new, h_new),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
+        contours_rotated = [
+            (cnt.reshape(-1, 2) @ M[:, :2].T + M[:, 2])
+            .reshape(-1, 1, 2)
+            .astype(np.int32)
+            for cnt in self.contours
+        ]
+
+        elliptical_mask_rotated = cv2.warpAffine(
+            self.elliptical_mask,
+            M,
+            (w_new, h_new),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
+        centre_rotated = (np.array(self.centre) @ M[:, :2].T) + M[:, 2]
+
+        def invert_affine_matrix(M):
+            R = M[:, :2]
+            T = M[:, 2]
+            R_inv = np.linalg.inv(R)
+            T_inv = -R_inv @ T
+            M_inv = np.zeros_like(M)
+            M_inv[:, :2] = R_inv
+            M_inv[:, 2] = T_inv
+            return M_inv
+
+        obj = np.asarray(mask_rotated).view(type(self))
+        obj.contours = contours_rotated
+        obj.elliptical_mask = elliptical_mask_rotated
+        obj.centre = centre_rotated
+        obj.radius = self.radius
+
+        M_inv = invert_affine_matrix(M)
+        obj.transform_point_to_orig_frame = (
+            lambda p: (np.array(p) @ M_inv[:, :2].T) + M_inv[:, 2]
+        )
+
         return obj

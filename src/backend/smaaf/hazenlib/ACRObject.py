@@ -1,14 +1,12 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-import cv2
 import skimage
 
 from pydicom import dcmread
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 
 from hazenlib.utils import get_image_orientation
-from hazenlib.mask import Mask
+from hazenlib.slice_mask import SliceMask
 from hazenlib.contour_validation import is_slice_thickness_insert
 
 
@@ -125,7 +123,7 @@ class ACRObject:
         adjustments are needed to restore the correct slice order.
         """
 
-        mask = Mask(self.images[4])
+        mask = SliceMask(self.images[4])
 
         if mask.is_uniformity_slice_mask():
             pass
@@ -134,7 +132,7 @@ class ACRObject:
             self.images.reverse()
             self.dcms.reverse()
 
-            mask = Mask(self.images[4])
+            mask = SliceMask(self.images[4])
             if mask.is_uniformity_slice_mask():
                 pass
             else:
@@ -144,7 +142,7 @@ class ACRObject:
 
     def get_mask_slice_0(self):
         image_0 = self.images[0]
-        mask = Mask(
+        mask = SliceMask(
             image_0,
             additional_contour_check=lambda c: is_slice_thickness_insert(
                 c, image_0.shape
