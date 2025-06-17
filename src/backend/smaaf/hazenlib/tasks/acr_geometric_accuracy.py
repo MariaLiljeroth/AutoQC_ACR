@@ -23,9 +23,11 @@ import os
 import numpy as np
 import cv2
 import matplotlib.patches as mpatches
+from pydicom.dataset import FileDataset
 
 from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
+from hazenlib.slice_mask import SliceMask
 
 
 class ACRGeometricAccuracy(HazenTask):
@@ -76,14 +78,12 @@ class ACRGeometricAccuracy(HazenTask):
 
         return results
 
-    def get_geometric_accuracy_Sag(self, dcm):
-        pass
-
-    def get_geometric_accuracy_slice5(self, dcm, mask):
+    def get_geometric_accuracy_slice5(self, dcm: FileDataset, mask: SliceMask):
         """Measure geometric accuracy for slice 5
 
         Args:
-            dcm (pydicom.Dataset): DICOM image object
+            dcm (FileDataset): DICOM image object
+            mask (SliceMask): Mask corresponding to chosen DICOM
 
         Returns:
             tuple of floats: horizontal and vertical distances, as well as diagonals (SW, SE)
@@ -156,7 +156,15 @@ class ACRGeometricAccuracy(HazenTask):
             length_dict["Diagonal Distance 2"],
         )
 
-    def measure_orthogonal_lengths(self, mask):
+    def measure_orthogonal_lengths(self, mask: SliceMask) -> dict:
+        """Measures orthogonal lengths for a mask.
+
+        Args:
+            mask (SliceMask): Mask to find orthogonal lengths of.
+
+        Returns:
+            dict: Dictionary containing horizontal and vertical start points, end points and distances.
+        """
         dx, dy = self.ACR_obj.pixel_spacing
 
         x, y, w, h = cv2.boundingRect(mask.elliptical_mask)
@@ -179,7 +187,15 @@ class ACRGeometricAccuracy(HazenTask):
 
         return length_dict
 
-    def measure_diagonal_lengths(self, mask):
+    def measure_diagonal_lengths(self, mask: SliceMask) -> dict:
+        """Measures diagonal lengths for a mask.
+
+        Args:
+            mask (SliceMask): Mask to find diagonal lengths of.
+
+        Returns:
+            dict: Dictionary containing the two diagonal start points, end points and distances.
+        """
         mask_45 = mask.get_rotated_mask(45)
         length_dict_diag = self.measure_orthogonal_lengths(mask_45)
         key_pairs = (

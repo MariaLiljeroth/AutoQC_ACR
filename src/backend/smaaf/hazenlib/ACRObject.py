@@ -3,6 +3,7 @@ import numpy as np
 import skimage
 
 from pydicom import dcmread
+from pydicom.dataset import FileDataSet
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 
 from hazenlib.utils import get_image_orientation
@@ -12,7 +13,6 @@ from hazenlib.contour_validation import is_slice_thickness_insert
 
 class ACRObject:
     def __init__(self, dcm_list, kwargs={}):
-
         # Added in a medium ACR phantom flag, not sure if this is the best way of doing this but will leave it for now..
         self.MediumACRPhantom = False
         if "MediumACRPhantom" in kwargs.keys():
@@ -48,15 +48,15 @@ class ACRObject:
 
         self.kwargs = kwargs
 
-    def sort_images(self):
+    def sort_images(self) -> tuple[list[np.ndarray], list[FileDataSet]]:
         """
         Sort a stack of images based on slice position.
 
         Returns
         -------
-        img_stack : np.array
+        img_stack : list[np.ndarray]
             A sorted stack of images, where each image is represented as a 2D numpy array.
-        dcm_stack : pyd
+        dcm_stack : list[FileDataSet]
             A sorted stack of dicoms
         """
 
@@ -113,14 +113,20 @@ class ACRObject:
 
         return img_stack, dicom_stack
 
-    def slice_order_checks(self):
+    def slice_order_checks(self) -> SliceMask:
         """
         Perform orientation checks on a set of images to determine if slice order inversion is required.
 
         Description
         -----------
         This function analyzes the given set of images and their associated DICOM objects to determine if any
-        adjustments are needed to restore the correct slice order.
+        adjustments are needed to restore the correct slice order. Checks are made based on detected contours
+        from mask of uniformity slice (slice 4). Mask of slice 4 is returned for later use.
+
+        Returns
+        -------
+        mask: SliceMask
+            The mask of slice 4 (the uniformity slice).
         """
 
         mask = SliceMask(self.images[4])
@@ -140,7 +146,16 @@ class ACRObject:
 
         return mask
 
-    def get_mask_slice_0(self):
+    def get_mask_slice_0(self) -> SliceMask:
+        """
+        Gets a mask of slice 0 (the slice thickness slice).
+
+        Returns
+        -------
+        mask: SliceMask
+            Mask of slice 0.
+
+        """
         image_0 = self.images[0]
         mask = SliceMask(
             image_0,
@@ -151,7 +166,7 @@ class ACRObject:
         return mask
 
     @staticmethod
-    def circular_mask(centre, radius, dims):
+    def circular_mask(centre: tuple, radius: int, dims: tuple) -> np.ndarray:
         """
         Creates a perfectly circular mask of the phantom.
 
@@ -180,7 +195,7 @@ class ACRObject:
         return mask
 
     @staticmethod
-    def rotate_point(origin, point, angle):
+    def rotate_point(origin: tuple, point: tuple, angle: int):
         """
         Compute the horizontal and vertical lengths of a mask, based on the centroid.
 

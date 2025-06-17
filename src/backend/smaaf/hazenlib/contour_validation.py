@@ -2,7 +2,23 @@ import cv2
 import numpy as np
 
 
-def is_slice_thickness_insert(contour, source_image_shape):
+def is_slice_thickness_insert(contour: np.ndarray, source_image_shape: tuple):
+    """
+    Checks whether the contour is the slice thickness insert by comparing properties to
+    expected properties.
+
+    Parameters
+    ----------
+    contour : np.ndarray
+        A detected contour from cv2.findContours.
+    source_image_shape: tuple
+        Shape of source image.
+
+    Returns
+    -------
+    bool:
+        True if contour is slice thickness insert, false otherwise.
+    """
     height_image, width_image = source_image_shape
     _, (width, height), _ = cv2.minAreaRect(contour)
 
@@ -16,6 +32,22 @@ def is_slice_thickness_insert(contour, source_image_shape):
 
 
 def is_phantom_edge(contour, source_image_shape):
+    """
+    Checks whether the contour is the phantom edge by comparing properties to
+    expected properties.
+
+    Parameters
+    ----------
+    contour : np.ndarray
+        A detected contour from cv2.findContours.
+    source_image_shape: tuple
+        Shape of source image.
+
+    Returns
+    -------
+    bool:
+        True if contour is phantom edge, false otherwise.
+    """
     # Calculate key raw contour stats
     rows, cols = source_image_shape
     epsilon = 1e-10
