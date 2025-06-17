@@ -125,7 +125,9 @@ class ACRGeometricAccuracy(HazenTask):
                     "",
                     xy=length_dict[end],
                     xytext=length_dict[start],
-                    arrowprops=dict(arrowstyle="->", color=f"C{i}"),
+                    arrowprops=dict(
+                        arrowstyle="->", color=f"C{i}", lw=1, mutation_scale=15
+                    ),
                 )
 
             legend_handles = [
