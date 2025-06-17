@@ -7,6 +7,7 @@ sys.path.append(
 
 from hazenlib.HazenTask import HazenTask
 from hazenlib.ACRObject import ACRObject
+from hazenlib.contour_validation import is_slice_thickness_insert
 from hazenlib.utils import get_dicom_files
 
 import cv2
@@ -144,11 +145,9 @@ class ACRSpatialResolution(HazenTask):
 
         def get_insert_contour(mask):
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            insert = [
-                c
-                for c in contours
-                if self.ACR_obj.is_slice_thickness_insert(c, mask.shape)
-            ][0]
+            insert = [c for c in contours if is_slice_thickness_insert(c, mask.shape)][
+                0
+            ]
             return insert
 
         insert = get_insert_contour(mask)
