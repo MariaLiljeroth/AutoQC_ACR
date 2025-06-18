@@ -60,7 +60,7 @@ class App(tk.Tk):
         else:
             frame = self.frames[frame_name]
         self.current_frame = frame
-        frame.tkraise()
+        self.after(50, frame.tkraise)
         self.after(100, lambda: self.resizable(False, False))
 
     def _check_queue(self):
@@ -81,6 +81,9 @@ class App(tk.Tk):
                     frame_class = self.FRAME_MAP[frame_name]
                     self.show_frame(frame_class, *args_to_pass)
                 elif event[0] == "QUIT_APPLICATION":
+                    messagebox.showinfo(
+                        "Quit", "AutoQC_ACR has finished running. Check the results!"
+                    )
                     self.destroy()
                     sys.exit()
                 else:

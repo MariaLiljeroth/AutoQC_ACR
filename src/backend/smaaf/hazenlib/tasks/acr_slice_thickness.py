@@ -242,7 +242,7 @@ class ACRSliceThickness(HazenTask):
                 )
             )
 
-            fig.savefig(image_path, dpi=600)
+            fig.savefig(image_path, dpi=300)
             plt.close()
             self.report_files.append(image_path)
 

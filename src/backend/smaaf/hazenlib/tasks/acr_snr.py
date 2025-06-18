@@ -283,7 +283,7 @@ class ACRSNR(HazenTask):
                     self.report_path, f"{self.img_desc(dcm1)}_snr_subtraction.png"
                 )
             )
-            fig.savefig(img_path)
+            fig.savefig(img_path, dpi=300)
             self.report_files.append(img_path)
 
         return snr, normalised_snr

@@ -147,7 +147,7 @@ class ACRGeometricAccuracy(HazenTask):
                     self.report_path, f"{self.img_desc(dcm)}_geom_accuracy.png"
                 )
             )
-            fig.savefig(img_path)
+            fig.savefig(img_path, dpi=300)
             self.report_files.append(img_path)
             plt.close()
 

@@ -291,7 +291,7 @@ class ACRUniformity(HazenTask):
             img_path = os.path.realpath(
                 os.path.join(self.report_path, f"{self.img_desc(dcm)}_uniformity.png")
             )
-            fig.savefig(img_path)
+            fig.savefig(img_path, dpi=300)
             plt.close()
             self.report_files.append(img_path)
 
