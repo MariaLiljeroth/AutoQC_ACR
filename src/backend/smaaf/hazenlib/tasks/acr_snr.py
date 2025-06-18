@@ -126,6 +126,244 @@ class ACRSNR(HazenTask):
 
         return results
 
+    def snr_by_smoothing(
+        self, dcm: pydicom.Dataset, mask: "SliceMask", measured_slice_width=None
+    ) -> float:
+        """Calculate signal to noise ratio based on smoothing method
+
+        Args:
+            dcm (pydicom.Dataset): DICOM image object
+            measured_slice_width (float, optional): Provide the true slice width for the set of images. Defaults to None.
+
+        Returns:
+            float: normalised_snr
+        """
+        centre = mask.centre
+        radius = mask.radius
+
+        signal = [
+            np.mean(roi)
+            for roi in self.get_roi_samples(
+                ax=None, dcm=dcm, centre=centre, phantom_radius=radius
+            )
+        ]
+        noise = [
+            np.std(roi, ddof=1)
+            for roi in self.get_roi_samples(
+                ax=None,
+                dcm=dcm,
+                centre=centre,
+                phantom_radius=radius,
+                place_in_background=True,
+            )
+        ]
+        # note no root_2 factor in noise for smoothed subtraction (one image) method, replicating Matlab approach and
+        # McCann 2013
+
+        # 0.655 factor included to correct for un-gaussian noise distribution
+        snr = np.mean(signal) / (np.mean(noise) / 0.655)
+
+        normalised_snr = snr * self.get_normalised_snr_factor(dcm, measured_slice_width)
+
+        if self.report:
+            import matplotlib.pyplot as plt
+
+            fig, axes = plt.subplots(2, 1)
+            fig.set_size_inches(8, 16)
+            fig.tight_layout(pad=4)
+
+            axes[0].imshow(dcm.pixel_array)
+            axes[0].scatter(*centre, c="red")
+            axes[0].set_title("Centroid Location")
+            circle1 = plt.Circle(centre, mask.radius, color="r", fill=False)
+            axes[0].add_patch(circle1)
+            axes[0].axis("off")
+
+            axes[1].set_title("ROI Placement for Standard SNR")
+            axes[1].imshow(dcm.pixel_array)
+            self.get_roi_samples(axes[1], dcm, centre, radius)
+            self.get_roi_samples(axes[1], dcm, centre, radius, place_in_background=True)
+            axes[1].axis("off")
+
+            img_path = os.path.realpath(
+                os.path.join(self.report_path, f"{self.img_desc(dcm)}_smoothing.png")
+            )
+            fig.savefig(img_path)
+            plt.close()
+            self.report_files.append(img_path)
+
+        return (
+            snr,
+            normalised_snr,
+            [round(elem, 1) for elem in signal],
+            [round(elem, 2) for elem in noise],
+            *centre,
+        )
+
+    def snr_by_subtraction(
+        self,
+        dcm1: pydicom.Dataset,
+        mask_snr: "SliceMask",
+        dcm2: pydicom.Dataset,
+        mask_snr2: "SliceMask",
+        measured_slice_width=None,
+    ) -> float:
+        """Calculate signal to noise ratio based on subtraction method
+
+        Args:
+            dcm1 (pydicom.Dataset): DICOM image object to calculate signal
+            dcm2 (pydicom.Dataset): DICOM image object to calculate noise
+            measured_slice_width (float, optional): Provide the true slice width for the set of images. Defaults to None.
+
+        Returns:
+            float: normalised_snr
+        """
+        centre1 = mask_snr.centre
+        centre2 = mask_snr2.centre
+        centre_av = [np.mean([a, b]) for a, b in zip(centre1, centre2)]
+
+        radius1 = mask_snr.radius
+        radius2 = mask_snr.radius
+        radius_av = np.mean([radius1, radius2])
+
+        difference = np.subtract(
+            apply_modality_lut(dcm1.pixel_array, dcm1).astype("int"),
+            apply_modality_lut(dcm2.pixel_array, dcm2).astype(
+                "int"
+            ),  # dcm1.pixel_array.astype("int"), dcm2.pixel_array.astype("int")
+        )
+
+        signal = [
+            np.mean(roi)
+            for roi in self.get_roi_samples(
+                ax=None, dcm=dcm1, centre=centre1, phantom_radius=radius1
+            )
+        ]
+        noise = np.divide(
+            [
+                np.std(roi, ddof=1)
+                for roi in self.get_roi_samples(
+                    ax=None, dcm=difference, centre=centre_av, phantom_radius=radius_av
+                )
+            ],
+            np.sqrt(2),
+        )
+        snr = np.mean(signal) / np.mean(noise)
+
+        normalised_snr = snr * self.get_normalised_snr_factor(
+            dcm1, measured_slice_width
+        )
+
+        if self.report:
+            import matplotlib.pyplot as plt
+
+            fig, axes = plt.subplots(3, 1)
+            fig.set_size_inches(8, 16)
+            fig.tight_layout(pad=4)
+
+            axes[0].imshow(dcm1.pixel_array)
+            axes[0].scatter(*centre1, c="red")
+            axes[0].axis("off")
+            axes[0].set_title("Centroid Location")
+
+            axes[1].set_title("ROI Placement in Original Image")
+            axes[1].imshow(dcm1.pixel_array)
+            self.get_roi_samples(axes[1], dcm1, centre1, radius1)
+            axes[1].axis("off")
+
+            axes[2].set_title("ROI Placement in Difference Image")
+            axes[2].imshow(difference)
+            self.get_roi_samples(axes[2], difference, centre_av, radius_av)
+            axes[2].axis("off")
+
+            img_path = os.path.realpath(
+                os.path.join(
+                    self.report_path, f"{self.img_desc(dcm1)}_snr_subtraction.png"
+                )
+            )
+            fig.savefig(img_path)
+            self.report_files.append(img_path)
+
+        return snr, normalised_snr
+
+    def get_roi_samples(
+        self,
+        ax,
+        dcm: pydicom.Dataset or np.ndarray,
+        centre: tuple,
+        phantom_radius: int | float,
+        place_in_background: bool = False,
+    ) -> list:
+        """Identify regions of interest
+
+        Args:
+            ax (matplotlib.pyplot.subplots): matplotlib axis for visualisation
+            dcm (pydicom.Dataset or np.ndarray): DICOM image object, or its pixel array
+            centre_col (int): x coordinate of the centre
+            centre_row (int): y coordinate of the centre
+
+        Returns:
+            list of np.array: subsets of the original pixel array
+        """
+        if type(dcm) == np.ndarray:
+            data = dcm
+        else:
+            data = apply_modality_lut(dcm.pixel_array, dcm).astype(
+                "int"
+            )  # dcm.pixel_array
+
+        centre_col, centre_row = centre
+
+        roi_size = phantom_radius // 4
+        roi_size += roi_size % 2
+        x_shift, y_shift = [phantom_radius // 2.5] * 2
+
+        if place_in_background:
+            rows, cols = data.shape
+            pad = np.mean([rows, cols]) // 20
+            centres = (
+                (pad + roi_size / 2, pad + roi_size / 2),
+                (cols - pad - roi_size / 2, pad + roi_size / 2),
+                (cols - pad - roi_size / 2, rows - pad - roi_size / 2),
+                (pad + roi_size / 2, rows - pad - roi_size / 2),
+            )
+
+        else:
+            centres = (
+                [centre_col, centre_row],
+                [centre_col - x_shift, centre_row - y_shift],
+                [centre_col - x_shift, centre_row + y_shift],
+                [centre_col + x_shift, centre_row - y_shift],
+                [centre_col + x_shift, centre_row + y_shift],
+            )
+
+        sample = [
+            data[
+                int(c[1] - roi_size / 2) : int(c[1] + roi_size / 2),
+                int(c[0] - roi_size / 2) : int(c[0] + roi_size / 2),
+            ]
+            for c in centres
+        ]
+
+        if ax:
+            from matplotlib.patches import Rectangle
+            from matplotlib.collections import PatchCollection
+
+            # for patches: [column/x, row/y] format
+
+            rects = [
+                Rectangle(
+                    (c[0] - roi_size // 2, c[1] - roi_size // 2), roi_size, roi_size
+                )
+                for c in centres
+            ]
+            pc = PatchCollection(
+                rects, edgecolors="red", facecolors="None", label="ROIs"
+            )
+            ax.add_collection(pc)
+
+        return sample
+
     def get_normalised_snr_factor(self, dcm, measured_slice_width=None) -> float:
         """Calculate the normalisation factor to be applied
 
@@ -158,257 +396,45 @@ class ACRSNR(HazenTask):
         )
         return normalised_snr_factor
 
-    def filtered_image(self, dcm: pydicom.Dataset) -> np.array:
-        """Apply filtering to a pixel array (image)
+    # def filtered_image(self, dcm: pydicom.Dataset) -> np.array:
+    #     """Apply filtering to a pixel array (image)
 
-        Notes:
-            Performs a 2D convolution (for filtering images)
-            uses uniform_filter SciPy function
+    #     Notes:
+    #         Performs a 2D convolution (for filtering images)
+    #         uses uniform_filter SciPy function
 
-        Args:
-            dcm (pydicom.Dataset): DICOM image object
+    #     Args:
+    #         dcm (pydicom.Dataset): DICOM image object
 
-        Returns:
-            np.array: pixel array of the filtered image
-        """
-        # a = dcm.pixel_array.astype("int")
-        a = apply_modality_lut(dcm.pixel_array, dcm).astype("int")
-        # filter size = 9, following MATLAB code and McCann 2013 paper for head coil, although note McCann 2013
-        # recommends 25x25 for body coil.
-        filtered_array = ndimage.uniform_filter(a, 9, mode="constant")
-        return filtered_array
+    #     Returns:
+    #         np.array: pixel array of the filtered image
+    #     """
+    #     # a = dcm.pixel_array.astype("int")
+    #     a = apply_modality_lut(dcm.pixel_array, dcm).astype("int")
+    #     # filter size = 9, following MATLAB code and McCann 2013 paper for head coil, although note McCann 2013
+    #     # recommends 25x25 for body coil.
+    #     filtered_array = ndimage.uniform_filter(a, 9, mode="constant")
+    #     return filtered_array
 
-    def get_noise_image(self, dcm: pydicom.Dataset) -> np.array:
-        """Get noise image by subtracting the filtered image from the original pixel array
+    # def get_noise_image(self, dcm: pydicom.Dataset) -> np.array:
+    #     """Get noise image by subtracting the filtered image from the original pixel array
 
-        Notes:
-            Separates the image noise by smoothing the image and subtracting the smoothed image from the original.
+    #     Notes:
+    #         Separates the image noise by smoothing the image and subtracting the smoothed image from the original.
 
-        Args:
-            dcm (pydicom.Dataset): DICOM image object
+    #     Args:
+    #         dcm (pydicom.Dataset): DICOM image object
 
-        Returns:
-            np.array: pixel array representing the image noise
-        """
-        # a = dcm.pixel_array.astype("int")
-        a = apply_modality_lut(dcm.pixel_array, dcm).astype("int")
+    #     Returns:
+    #         np.array: pixel array representing the image noise
+    #     """
+    #     # a = dcm.pixel_array.astype("int")
+    #     a = apply_modality_lut(dcm.pixel_array, dcm).astype("int")
 
-        # Convolve image with boxcar/uniform kernel
-        imsmoothed = self.filtered_image(dcm)
+    #     # Convolve image with boxcar/uniform kernel
+    #     imsmoothed = self.filtered_image(dcm)
 
-        # Subtract smoothed array from original
-        imnoise = a - imsmoothed
+    #     # Subtract smoothed array from original
+    #     imnoise = a - imsmoothed
 
-        return imnoise
-
-    def get_roi_samples(
-        self, ax, dcm: pydicom.Dataset or np.ndarray, centre_col: int, centre_row: int
-    ) -> list:
-        """Identify regions of interest
-
-        Args:
-            ax (matplotlib.pyplot.subplots): matplotlib axis for visualisation
-            dcm (pydicom.Dataset or np.ndarray): DICOM image object, or its pixel array
-            centre_col (int): x coordinate of the centre
-            centre_row (int): y coordinate of the centre
-
-        Returns:
-            list of np.array: subsets of the original pixel array
-        """
-        if type(dcm) == np.ndarray:
-            data = dcm
-        else:
-            data = apply_modality_lut(dcm.pixel_array, dcm).astype(
-                "int"
-            )  # dcm.pixel_array
-
-        sample = [None] * 5
-        # for array indexing: [row, column] format
-        sample[0] = data[
-            (centre_row - 10) : (centre_row + 10), (centre_col - 10) : (centre_col + 10)
-        ]
-        sample[1] = data[
-            (centre_row - 50) : (centre_row - 30), (centre_col - 50) : (centre_col - 30)
-        ]
-        sample[2] = data[
-            (centre_row + 30) : (centre_row + 50), (centre_col - 50) : (centre_col - 30)
-        ]
-        sample[3] = data[
-            (centre_row - 50) : (centre_row - 30), (centre_col + 30) : (centre_col + 50)
-        ]
-        sample[4] = data[
-            (centre_row + 30) : (centre_row + 50), (centre_col + 30) : (centre_col + 50)
-        ]
-
-        if ax:
-            from matplotlib.patches import Rectangle
-            from matplotlib.collections import PatchCollection
-
-            # for patches: [column/x, row/y] format
-
-            rects = [
-                Rectangle((centre_col - 10, centre_row - 10), 20, 20),
-                Rectangle((centre_col - 50, centre_row - 50), 20, 20),
-                Rectangle((centre_col + 30, centre_row - 50), 20, 20),
-                Rectangle((centre_col - 50, centre_row + 30), 20, 20),
-                Rectangle((centre_col + 30, centre_row + 30), 20, 20),
-            ]
-            pc = PatchCollection(
-                rects, edgecolors="red", facecolors="None", label="ROIs"
-            )
-            ax.add_collection(pc)
-
-        return sample
-
-    def snr_by_smoothing(
-        self, dcm: pydicom.Dataset, mask: "Mask", measured_slice_width=None
-    ) -> float:
-        """Calculate signal to noise ratio based on smoothing method
-
-        Args:
-            dcm (pydicom.Dataset): DICOM image object
-            measured_slice_width (float, optional): Provide the true slice width for the set of images. Defaults to None.
-
-        Returns:
-            float: normalised_snr
-        """
-        centre = mask.centre
-        col, row = centre
-
-        noise_img = self.get_noise_image(dcm)
-
-        signal = [
-            np.mean(roi)
-            for roi in self.get_roi_samples(
-                ax=None, dcm=dcm, centre_col=int(col), centre_row=int(row)
-            )
-        ]
-        noise = [
-            np.std(roi, ddof=1)
-            for roi in self.get_roi_samples(
-                ax=None, dcm=noise_img, centre_col=int(col), centre_row=int(row)
-            )
-        ]
-        # note no root_2 factor in noise for smoothed subtraction (one image) method, replicating Matlab approach and
-        # McCann 2013
-
-        snr = np.mean(np.divide(signal, noise))
-
-        normalised_snr = snr * self.get_normalised_snr_factor(dcm, measured_slice_width)
-
-        if self.report:
-            import matplotlib.pyplot as plt
-
-            fig, axes = plt.subplots(2, 1)
-            fig.set_size_inches(8, 16)
-            fig.tight_layout(pad=4)
-
-            axes[0].imshow(dcm.pixel_array)
-            axes[0].scatter(centre[0], centre[1], c="red")
-            axes[0].set_title("Centroid Location")
-            circle1 = plt.Circle(
-                (centre[0], centre[1]), mask.radius, color="r", fill=False
-            )
-            axes[0].add_patch(circle1)
-
-            axes[1].set_title("Smoothed Noise Image")
-            axes[1].imshow(noise_img, cmap="gray")
-            self.get_roi_samples(axes[1], dcm, int(col), int(row))
-
-            img_path = os.path.realpath(
-                os.path.join(self.report_path, f"{self.img_desc(dcm)}_smoothing.png")
-            )
-            fig.savefig(img_path)
-            plt.close()
-            self.report_files.append(img_path)
-
-        return (
-            snr,
-            normalised_snr,
-            [round(elem, 1) for elem in signal],
-            [round(elem, 2) for elem in noise],
-            col,
-            row,
-        )
-
-    def snr_by_subtraction(
-        self,
-        dcm1: pydicom.Dataset,
-        mask_snr: "Mask",
-        dcm2: pydicom.Dataset,
-        mask_snr2: "Mask",
-        measured_slice_width=None,
-    ) -> float:
-        """Calculate signal to noise ratio based on subtraction method
-
-        Args:
-            dcm1 (pydicom.Dataset): DICOM image object to calculate signal
-            dcm2 (pydicom.Dataset): DICOM image object to calculate noise
-            measured_slice_width (float, optional): Provide the true slice width for the set of images. Defaults to None.
-
-        Returns:
-            float: normalised_snr
-        """
-        centre1 = mask_snr.centre
-        centre2 = mask_snr2.centre
-
-        col1, row1 = centre1
-        col2, row2 = centre2
-
-        difference = np.subtract(
-            apply_modality_lut(dcm1.pixel_array, dcm1).astype("int"),
-            apply_modality_lut(dcm2.pixel_array, dcm2).astype(
-                "int"
-            ),  # dcm1.pixel_array.astype("int"), dcm2.pixel_array.astype("int")
-        )
-
-        signal = [
-            np.mean(roi)
-            for roi in self.get_roi_samples(
-                ax=None, dcm=dcm1, centre_col=int(col1), centre_row=int(row1)
-            )
-        ]
-        noise = np.divide(
-            [
-                np.std(roi, ddof=1)
-                for roi in self.get_roi_samples(
-                    ax=None, dcm=difference, centre_col=int(col2), centre_row=int(row2)
-                )
-            ],
-            np.sqrt(2),
-        )
-        snr = np.mean(np.divide(signal, noise))
-
-        normalised_snr = snr * self.get_normalised_snr_factor(
-            dcm1, measured_slice_width
-        )
-
-        if self.report:
-            import matplotlib.pyplot as plt
-
-            fig, axes = plt.subplots(2, 1)
-            fig.set_size_inches(8, 16)
-            fig.tight_layout(pad=4)
-
-            axes[0].imshow(dcm1.pixel_array)
-            axes[0].scatter(centre1[0], centre1[1], c="red")
-            axes[0].axis("off")
-            axes[0].set_title("Centroid Location")
-
-            axes[1].set_title("Difference Image")
-            axes[1].imshow(
-                difference,
-                cmap="gray",
-            )
-            self.get_roi_samples(axes[1], dcm1, int(col1), int(row1))
-            axes[1].axis("off")
-
-            img_path = os.path.realpath(
-                os.path.join(
-                    self.report_path, f"{self.img_desc(dcm1)}_snr_subtraction.png"
-                )
-            )
-            fig.savefig(img_path)
-            self.report_files.append(img_path)
-
-        return snr, normalised_snr
+    #     return imnoise
