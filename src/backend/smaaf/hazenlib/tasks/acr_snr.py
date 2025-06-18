@@ -178,8 +178,8 @@ class ACRSNR(HazenTask):
             circle1 = plt.Circle(centre, mask.radius, color="r", fill=False)
             axes[0].add_patch(circle1)
 
-            axes[1].set_title("Smoothed Noise Image")
-            axes[1].imshow(dcm.pixel_array, cmap="gray")
+            axes[1].set_title("ROI Placement for Standard SNR")
+            axes[1].imshow(dcm.pixel_array)
             self.get_roi_samples(axes[1], dcm, centre, radius)
             self.get_roi_samples(axes[1], dcm, centre, radius, place_in_background=True)
 
@@ -218,7 +218,7 @@ class ACRSNR(HazenTask):
         """
         centre1 = mask_snr.centre
         centre2 = mask_snr2.centre
-        centre_av = (np.mean([a, b]) for a, b in zip(centre1, centre2))
+        centre_av = [np.mean([a, b]) for a, b in zip(centre1, centre2)]
 
         radius1 = mask_snr.radius
         radius2 = mask_snr.radius
@@ -255,7 +255,7 @@ class ACRSNR(HazenTask):
         if self.report:
             import matplotlib.pyplot as plt
 
-            fig, axes = plt.subplots(2, 1)
+            fig, axes = plt.subplots(3, 1)
             fig.set_size_inches(8, 16)
             fig.tight_layout(pad=4)
 
@@ -264,13 +264,15 @@ class ACRSNR(HazenTask):
             axes[0].axis("off")
             axes[0].set_title("Centroid Location")
 
-            axes[1].set_title("Difference Image")
-            axes[1].imshow(
-                difference,
-                cmap="gray",
-            )
+            axes[1].set_title("ROI Placement in Original Image")
+            axes[1].imshow(dcm1.pixel_array)
             self.get_roi_samples(axes[1], dcm1, centre1, radius1)
             axes[1].axis("off")
+
+            axes[2].set_title("ROI Placement in Difference Image")
+            axes[2].imshow(difference)
+            self.get_roi_samples(axes[2], difference, centre_av, radius_av)
+            axes[2].axis("off")
 
             img_path = os.path.realpath(
                 os.path.join(
