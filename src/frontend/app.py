@@ -45,6 +45,8 @@ class App(tk.Tk):
         Args:
             frame_class (tk.Frame): Frame to display.
         """
+
+        self.resizable(True, True)
         frame_name = frame_class.__name__
         if frame_name not in self.frames:
             frame = frame_class(self, *args_to_pass)
@@ -59,6 +61,7 @@ class App(tk.Tk):
             frame = self.frames[frame_name]
         self.current_frame = frame
         frame.tkraise()
+        self.after(100, lambda: self.resizable(False, False))
 
     def _check_queue(self):
         """Initialises queue checking for events. App-level events are immediately handled.
