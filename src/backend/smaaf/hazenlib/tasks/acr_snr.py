@@ -177,11 +177,13 @@ class ACRSNR(HazenTask):
             axes[0].set_title("Centroid Location")
             circle1 = plt.Circle(centre, mask.radius, color="r", fill=False)
             axes[0].add_patch(circle1)
+            axes[0].axis("off")
 
             axes[1].set_title("ROI Placement for Standard SNR")
             axes[1].imshow(dcm.pixel_array)
             self.get_roi_samples(axes[1], dcm, centre, radius)
             self.get_roi_samples(axes[1], dcm, centre, radius, place_in_background=True)
+            axes[1].axis("off")
 
             img_path = os.path.realpath(
                 os.path.join(self.report_path, f"{self.img_desc(dcm)}_smoothing.png")
