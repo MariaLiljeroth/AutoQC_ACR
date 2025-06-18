@@ -265,6 +265,8 @@ class ACRSNR(HazenTask):
             axes[0].scatter(*centre1, c="red")
             axes[0].axis("off")
             axes[0].set_title("Centroid Location")
+            circle1 = plt.Circle(centre1, radius1, color="r", fill=False)
+            axes[0].add_patch(circle1)
 
             axes[1].set_title("ROI Placement in Original Image")
             axes[1].imshow(dcm1.pixel_array)
