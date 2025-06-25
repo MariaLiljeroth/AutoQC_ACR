@@ -180,7 +180,7 @@ class ACRObject:
             image, true_mask = self.images[idx], self.masks[idx]
 
             # get circular test mask and masked float image
-            radius_test_mask = true_mask.radius * 5 / 6
+            radius_test_mask = true_mask.radius * 11 / 12
             test_circ_mask = self.circular_mask(
                 true_mask.centre, radius_test_mask, true_mask.shape
             )
@@ -210,7 +210,7 @@ class ACRObject:
 
             # reduce radius of mask slightly to avoid edge effects.
             reduced_mask = self.circular_mask(
-                true_mask.centre, radius_test_mask * 0.9, true_mask.shape
+                true_mask.centre, radius_test_mask * 0.95, true_mask.shape
             )
             image_masked = image_masked * reduced_mask
             texture = image_masked[reduced_mask].reshape(-1)
