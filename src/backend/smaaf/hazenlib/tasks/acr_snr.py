@@ -60,8 +60,9 @@ class ACRSNR(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Identify relevant slice
-        dcm_snr = self.ACR_obj.dcms[4]
-        mask_snr = self.ACR_obj.masks[4]
+        target_slice = self.ACR_obj.most_uniform_slice
+        dcm_snr = self.ACR_obj.dcms[target_slice]
+        mask_snr = self.ACR_obj.masks[target_slice]
 
         # Initialise results dictionary
         results = self.init_result_dict()
@@ -100,8 +101,10 @@ class ACRSNR(HazenTask):
             data2 = [pydicom.dcmread(dicom) for dicom in filepaths]
 
             ACR_obj_2 = ACRObject(data2)
-            dcm_snr2 = ACR_obj_2.dcms[4]
-            mask_snr2 = ACR_obj_2.masks[4]
+            target_slice_2 = ACR_obj_2.most_uniform_slice
+            dcm_snr2 = ACR_obj_2.dcms[target_slice_2]
+            mask_snr2 = ACR_obj_2.masks[target_slice_2]
+
             results["file"] = [self.img_desc(dcm_snr), self.img_desc(dcm_snr2)]
             try:
                 snr, normalised_snr = self.snr_by_subtraction(

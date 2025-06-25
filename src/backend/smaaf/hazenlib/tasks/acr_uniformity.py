@@ -44,8 +44,9 @@ class ACRUniformity(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         # Initialise results dictionary
-        dcm_unif = self.ACR_obj.dcms[4]
-        mask_unif = self.ACR_obj.masks[4]
+        target_slice = self.ACR_obj.most_uniform_slice
+        dcm_unif = self.ACR_obj.dcms[target_slice]
+        mask_unif = self.ACR_obj.masks[target_slice]
 
         results = self.init_result_dict()
         results["file"] = self.img_desc(dcm_unif)

@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import skimage
+import cv2
+from scipy.ndimage import generic_filter
 
 from pydicom import dcmread
 from pydicom.dataset import FileDataset
@@ -35,11 +37,16 @@ class ACRObject:
                 if elem.tag == (0x28, 0x30):
                     self.pixel_spacing = elem.value
 
-        # Check slice order of images and reverse if necessary. Mask of uniformity slice (slice 4) is also stored.
-        self.masks[4] = self.slice_order_checks()
+        # Check slice order of images and reverse if necessary. Mask of slice thickness slice (slice 0) is also stored.
+        self.masks[0] = self.slice_order_checks()
 
-        # Get mask of slice thickness slice (slice 0)
-        self.masks[0] = self.get_mask_slice_0()
+        # take masks of slices 4-6 for uniformity checks
+        self.unif_test_idxs = [4, 5, 6]
+        for idx in self.unif_test_idxs:
+            self.masks[idx] = SliceMask(self.images[idx])
+
+        # find most uniform slice
+        self.most_uniform_slice = self.find_most_uniform_slice()
 
         if "Localiser" in kwargs.keys():
             self.LocalisierDCM = dcmread(kwargs["Localiser"])
@@ -121,34 +128,31 @@ class ACRObject:
         -----------
         This function analyzes the given set of images and their associated DICOM objects to determine if any
         adjustments are needed to restore the correct slice order. Checks are made based on detected contours
-        from mask of uniformity slice (slice 4). Mask of slice 4 is returned for later use.
+        from mask of uniformity slice (slice 5). Mask of slice 5 is returned for later use.
 
         Returns
         -------
         mask: SliceMask
-            The mask of slice 4 (the uniformity slice).
+            The mask of slice 5 (the uniformity slice).
         """
 
-        mask = SliceMask(self.images[4])
+        try:
+            mask_0 = self.get_mask_slice_0()
+        except:
+            try:
+                self.images.reverse()
+                self.dcms.reverse()
+                mask_0 = self.get_mask_slice_0()
+            except:
+                raise ValueError(
+                    "First or last slice not detected as slice thickness slice.\n Please check that you selected the correct subdirectories and that the images look as expected."
+                )
 
-        if mask.is_uniformity_slice_mask():
-            pass
-
-        else:
-            self.images.reverse()
-            self.dcms.reverse()
-
-            mask = SliceMask(self.images[4])
-            if mask.is_uniformity_slice_mask():
-                pass
-            else:
-                raise RuntimeError("Slice order checks failed.")
-
-        return mask
+        return mask_0
 
     def get_mask_slice_0(self) -> SliceMask:
         """
-        Gets a mask of slice 0 (the slice thickness slice).
+        Gets a mask of slice 0.
 
         Returns
         -------
@@ -164,6 +168,70 @@ class ACRObject:
             ),
         )
         return mask
+
+    def find_most_uniform_slice(self) -> dict:
+        entropies = []
+
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(2, 3)
+
+        for z, idx in enumerate(self.unif_test_idxs):
+            image, true_mask = self.images[idx], self.masks[idx]
+
+            # get circular test mask and masked float image
+            radius_test_mask = true_mask.radius * 5 / 6
+            test_circ_mask = self.circular_mask(
+                true_mask.centre, radius_test_mask, true_mask.shape
+            )
+            image_masked = image * test_circ_mask
+            image_masked = image_masked.astype(np.float32)
+
+            # normalize roi values to increase contrast
+            # image_masked[test_circ_mask] = cv2.normalize(
+            #     image_masked[test_circ_mask],
+            #     None,
+            #     0,
+            #     2**16 - 1,
+            #     norm_type=cv2.NORM_MINMAX,
+            # ).reshape(-1)
+
+            # contrast enhancement by local histogram equalization (and change to float32 for further processing).
+            # clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(4, 4))
+            # image_masked = clahe.apply(image_masked)
+
+            # subtract background, normalize
+            difference = image_masked - cv2.GaussianBlur(image_masked, (51, 51), 0)
+            roi_vals_background_sub = difference[test_circ_mask]
+            # roi_vals_background_sub = cv2.normalize(
+            #     roi_vals_background_sub, None, 0, 2**16 - 1, norm_type=cv2.NORM_MINMAX
+            # ).reshape(-1)
+            image_masked[test_circ_mask] = roi_vals_background_sub
+
+            # reduce radius of mask slightly to avoid edge effects.
+            reduced_mask = self.circular_mask(
+                true_mask.centre, radius_test_mask * 0.9, true_mask.shape
+            )
+            image_masked = image_masked * reduced_mask
+            texture = image_masked[reduced_mask].reshape(-1)
+
+            ax[0, z].imshow(image_masked)
+            ax[1, z].imshow(image)
+
+            # create bins for histogram
+            bin_width = 108
+            data_min, data_max = np.min(texture), np.max(texture)
+            bins = np.arange(data_min, data_max + bin_width + 1e-8, bin_width)
+
+            # calculate shannon entropy
+            hist, _ = np.histogram(texture, bins=bins)
+            probs = hist / hist.sum()
+            shannon_entropy = -np.sum(probs[probs > 0] * np.log2(probs[probs > 0]))
+            entropies.append(shannon_entropy)
+
+        most_uniform_slice = self.unif_test_idxs[np.argmin(entropies)]
+        plt.savefig("debug")
+        return most_uniform_slice
 
     @staticmethod
     def circular_mask(centre: tuple, radius: int, dims: tuple) -> np.ndarray:

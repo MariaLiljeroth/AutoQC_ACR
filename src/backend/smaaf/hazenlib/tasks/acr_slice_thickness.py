@@ -150,20 +150,22 @@ class ACRSliceThickness(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation.
         """
         # Identify relevant slice
-        slice_thickness_dcm = self.ACR_obj.dcms[0]
+        target_slice = 0
+        dcm_slice_th = self.ACR_obj.dcms[target_slice]
+        mask = self.ACR_obj.masks[target_slice]
 
         # Initialise results dictionary
         results = self.init_result_dict()
-        results["file"] = self.img_desc(slice_thickness_dcm)
+        results["file"] = self.img_desc(dcm_slice_th)
 
         try:
-            result = self.get_slice_thickness(slice_thickness_dcm)
+            result = self.get_slice_thickness(dcm_slice_th, mask)
             results["measurement"] = {"slice width mm": round(result, 2)}
-            print(f"{self.img_desc(slice_thickness_dcm)}: Slice thickness calculated.")
+            print(f"{self.img_desc(dcm_slice_th)}: Slice thickness calculated.")
 
         except Exception as e:
             print(
-                f"{self.img_desc(slice_thickness_dcm)}: Could not calculate slice thickness because of: {e}"
+                f"{self.img_desc(dcm_slice_th)}: Could not calculate slice thickness because of: {e}"
             )
             # traceback.print_exc(file=sys.stdout)
 
@@ -173,7 +175,7 @@ class ACRSliceThickness(HazenTask):
 
         return results
 
-    def get_slice_thickness(self, dcm):
+    def get_slice_thickness(self, dcm, mask):
         """Measure slice thickness. \n
         Identify the ramps, measure the line profile, measure the FWHM, and use this to calculate the slice thickness.
 
@@ -184,7 +186,6 @@ class ACRSliceThickness(HazenTask):
             float: measured slice thickness.
         """
         image = dcm.pixel_array
-        mask = self.ACR_obj.masks[0]
 
         interp_factor = 4
         interp_pixel_mm = [dist / interp_factor for dist in self.ACR_obj.pixel_spacing]

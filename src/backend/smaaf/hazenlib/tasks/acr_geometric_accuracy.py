@@ -49,8 +49,9 @@ class ACRGeometricAccuracy(HazenTask):
         """
 
         # Identify relevant slices
-        dcm_geom = self.ACR_obj.dcms[4]
-        mask_geom = self.ACR_obj.masks[4]
+        target_slice = self.ACR_obj.most_uniform_slice
+        dcm_geom = self.ACR_obj.dcms[target_slice]
+        mask_geom = self.ACR_obj.masks[target_slice]
 
         # Initialise results dictionary
         results = self.init_result_dict()

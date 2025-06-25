@@ -35,12 +35,15 @@ class ACRSpatialResolution(HazenTask):
         self.ACR_obj = ACRObject(self.dcm_list, kwargs)
 
     def run(self):
-        mtf_dcm = self.ACR_obj.dcms[0]
+        target_slice = 0
+        mtf_dcm = self.ACR_obj.dcms[target_slice]
+        mask = self.ACR_obj.masks[target_slice]
+
         results = self.init_result_dict()
         results["file"] = self.img_desc(mtf_dcm)
 
         try:
-            mtf50 = self.get_mtf50(mtf_dcm)
+            mtf50 = self.get_mtf50(mtf_dcm, mask)
             results["measurement"] = {"mtf50": mtf50}
             print(f"{self.img_desc(mtf_dcm)}: Spatial resolution calculated.")
 
@@ -54,9 +57,11 @@ class ACRSpatialResolution(HazenTask):
 
         return results
 
-    def get_mtf50(self, dcm):
+    def get_mtf50(self, dcm, mask):
         self.image_orig = dcm.pixel_array
-        self.roi, self.roi_centre, self.roi_bounds, self.image_rotated = self.get_roi()
+        self.roi, self.roi_centre, self.roi_bounds, self.image_rotated = self.get_roi(
+            mask
+        )
 
         self.esf = self.get_esf_raw()
         self.esf_fitted = self.get_esf_fitted()
@@ -140,9 +145,7 @@ class ACRSpatialResolution(HazenTask):
 
         return mtf50
 
-    def get_roi(self):
-        mask = self.ACR_obj.masks[0]
-
+    def get_roi(self, mask):
         def get_insert_contour(mask):
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             insert = [c for c in contours if is_slice_thickness_insert(c, mask.shape)][
@@ -276,13 +279,6 @@ class ACRSpatialResolution(HazenTask):
 
         return mtf
 
-
-if __name__ == "__main__":
-    from tkinter import filedialog
-
-    path = filedialog.askdirectory()
-    obj = ACRSpatialResolution(input_data=get_dicom_files(path), report=True)
-    obj.run()
 
 # @classmethod
 # def get_res_matrix(cls, image):
