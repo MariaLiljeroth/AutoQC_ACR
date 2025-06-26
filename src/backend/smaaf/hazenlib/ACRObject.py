@@ -172,11 +172,7 @@ class ACRObject:
     def find_most_uniform_slice(self) -> dict:
         entropies = []
 
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(2, 3)
-
-        for z, idx in enumerate(self.unif_test_idxs):
+        for idx in self.unif_test_idxs:
             image, true_mask = self.images[idx], self.masks[idx]
 
             # get circular test mask and masked float image
@@ -187,26 +183,8 @@ class ACRObject:
             image_masked = image * test_circ_mask
             image_masked = image_masked.astype(np.float32)
 
-            # normalize roi values to increase contrast
-            # image_masked[test_circ_mask] = cv2.normalize(
-            #     image_masked[test_circ_mask],
-            #     None,
-            #     0,
-            #     2**16 - 1,
-            #     norm_type=cv2.NORM_MINMAX,
-            # ).reshape(-1)
-
-            # contrast enhancement by local histogram equalization (and change to float32 for further processing).
-            # clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(4, 4))
-            # image_masked = clahe.apply(image_masked)
-
-            # subtract background, normalize
             difference = image_masked - cv2.GaussianBlur(image_masked, (51, 51), 0)
-            roi_vals_background_sub = difference[test_circ_mask]
-            # roi_vals_background_sub = cv2.normalize(
-            #     roi_vals_background_sub, None, 0, 2**16 - 1, norm_type=cv2.NORM_MINMAX
-            # ).reshape(-1)
-            image_masked[test_circ_mask] = roi_vals_background_sub
+            image_masked[test_circ_mask] = difference[test_circ_mask]
 
             # reduce radius of mask slightly to avoid edge effects.
             reduced_mask = self.circular_mask(
@@ -214,9 +192,6 @@ class ACRObject:
             )
             image_masked = image_masked * reduced_mask
             texture = image_masked[reduced_mask].reshape(-1)
-
-            ax[0, z].imshow(image_masked)
-            ax[1, z].imshow(image)
 
             # create bins for histogram
             bin_width = 108
@@ -230,7 +205,7 @@ class ACRObject:
             entropies.append(shannon_entropy)
 
         most_uniform_slice = self.unif_test_idxs[np.argmin(entropies)]
-        plt.savefig("debug")
+
         return most_uniform_slice
 
     @staticmethod

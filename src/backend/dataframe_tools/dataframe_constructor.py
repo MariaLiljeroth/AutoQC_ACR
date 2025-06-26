@@ -25,7 +25,7 @@ class DataFrameConstructor:
 
         Args:
             results (dict): Organised results from task running.
-            excel_path (Path): Path to save the Excel file.
+            excel_path (Path): Path to save the Excel file to.
         """
         self.width_df = len(EXPECTED_ORIENTATIONS) + 1
         self.blank_row = self.make_row(np.nan)
@@ -35,13 +35,13 @@ class DataFrameConstructor:
 
     def run(self):
         """Constructs the DataFrame and saves it to an Excel file."""
-        # Get list of dataframes for each task.
+        # Get list of relevant dataframes for each task.
         tasks = list(self.results.keys())
         task_headers = [self.make_row(task.upper()) for task in tasks]
         task_dfs = [self.construct_df_for_task(task) for task in tasks]
         blank_rows = [self.blank_row for _ in range(len(tasks))]
 
-        # Interleave the task headers, dataframes, and blank rows and concat.
+        # Interleave the task headers, dataframes, and blank rows and concat to form final Excel spreadsheet.
         master_df = pd.concat(
             chain.from_iterable(zip(task_headers, task_dfs, blank_rows))
         )
@@ -61,6 +61,7 @@ class DataFrameConstructor:
         """
         coil_dfs = [self.construct_df_for_coil(task, coil) for coil in EXPECTED_COILS]
         blank_rows = [self.blank_row for _ in range(len(coil_dfs))]
+
         return pd.concat(list(chain.from_iterable(zip(coil_dfs, blank_rows)))[:-1])
 
     def construct_df_for_coil(self, task: str, coil: str) -> pd.DataFrame:
@@ -116,7 +117,18 @@ class DataFrameConstructor:
 
         elif task == "SNR":
 
-            def pull_snr_values(smoothing: bool = True):
+            def pull_snr_values(
+                smoothing: bool = True,
+            ) -> tuple[list[float], list[float]]:
+                """Gets the values for SNR for the specific coil.
+
+                Args:
+                    smoothing (bool, optional): flag for disabling SNR by subtraction . Defaults to True.
+
+                Returns:
+                    tuple[list[float], list[float]]: Lists of SNR and normalised SNR values.
+                """
+                # get pairs of SNR and normalised SNR
                 snr_norm_pairs = (
                     [
                         self.chained_get(
@@ -143,6 +155,7 @@ class DataFrameConstructor:
 
             # Try to pull snr values using smoothing key
             snr, normalised_snr = pull_snr_values()
+
             # If all values are N/A, try to pull using subtraction key
             if all(
                 [
@@ -158,6 +171,7 @@ class DataFrameConstructor:
             return snr, normalised_snr
 
         elif task == "Geometric Accuracy":
+            # Get quadruplets of lengths for each orientation for the specific coil.
             length_quadruplets = [
                 self.chained_get(
                     task,
@@ -171,7 +185,16 @@ class DataFrameConstructor:
                 for orientation in EXPECTED_ORIENTATIONS
             ]
 
-            def get_perc_diff_and_cv(length_quadruplet):
+            def get_perc_diff_and_cv(length_quadruplet: dict) -> tuple[float]:
+                """Get reported statistics from length quadruplet dict.
+
+                Args:
+                    length_quadruplet (dict): Dictionary of lengths.
+
+                Returns:
+                    tuple[float]: tuple of average percentage difference and coefficient of variation.
+                """
+
                 try:
                     true_length = 173
                     length_quadruplet = list(length_quadruplet.values())
@@ -197,6 +220,7 @@ class DataFrameConstructor:
             return av_perc_diffs, cvs
 
         elif task == "Uniformity":
+            # get uniformity values for specific coil
             uniformity = [
                 self.chained_get(
                     task, coil, orientation, "measurement", "integral uniformity %"
@@ -207,10 +231,13 @@ class DataFrameConstructor:
             return uniformity
 
         elif task == "Spatial Resolution":
+            # get mtf50 values for specific coil
             mtf50 = [
                 self.chained_get(task, coil, orientation, "measurement", "mtf50")
                 for orientation in EXPECTED_ORIENTATIONS
             ]
+
+            # calculate spatial resolution from mtf50
             spatial_res = [
                 (
                     1 / mtf
