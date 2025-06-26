@@ -32,6 +32,10 @@ class DicomSorter:
             # get UID and SeriesDescription tags and populate trackers/mappers.
             metadata = pydicom.dcmread(dcm)
             uid, sDescrip = metadata.SeriesInstanceUID, metadata.SeriesDescription
+ 
+            sDescrip=sDescrip.replace("/", "_")
+            
+            
             self.populate_uid_suffix_mapper(uid, sDescrip)
 
             # Work out target folder path, create and move DICOM there.
@@ -39,7 +43,7 @@ class DicomSorter:
                 self.dir / sDescrip / self.uid_suffix_mapper[uid]
                 if hasattr(metadata, "PixelData")
                 else self.dir / "NoImageData"
-            )
+            )            
             target_folder.mkdir(exist_ok=True)
             dcm.rename(target_folder / dcm.name)
             # Send update to queue for progress bar visuals.
