@@ -14,13 +14,19 @@ matplotlib.use("Agg")
 
 from frontend.app import App
 
+# bool determining whether script is run from .exe (script frozen) or in IDE.
 frozen = getattr(sys, "frozen", False)
 
 if __name__ == "__main__":
     mp.freeze_support()
+
+    # create instance of App class.
     app = App()
     if frozen:
+        # if script frozen, close splash screen after App initialised.
         import pyi_splash  # type: ignore
 
         pyi_splash.close()
+
+    # run app mainloop
     app.mainloop()
