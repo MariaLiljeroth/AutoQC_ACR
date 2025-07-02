@@ -15,6 +15,8 @@ class DicomSorter:
         tracked_sDescrips (list[str]): List of SeriesDescription values that have been tracked.
     """
 
+    TRANSLATION_TABLE = str.maketrans({c: "_" for c in '\\/:*?"<>|'})
+
     def __init__(self, dir: Path):
         """Initialises the DicomSorter class.
 
@@ -32,10 +34,10 @@ class DicomSorter:
             # get UID and SeriesDescription tags and populate trackers/mappers.
             metadata = pydicom.dcmread(dcm)
             uid, sDescrip = metadata.SeriesInstanceUID, metadata.SeriesDescription
- 
-            sDescrip=sDescrip.replace("/", "_")
-            
-            
+
+            # Clean up series description to make safe for file explorer paths.
+            sDescrip = sDescrip.translate(self.TRANSLATION_TABLE)
+
             self.populate_uid_suffix_mapper(uid, sDescrip)
 
             # Work out target folder path, create and move DICOM there.
@@ -43,7 +45,7 @@ class DicomSorter:
                 self.dir / sDescrip / self.uid_suffix_mapper[uid]
                 if hasattr(metadata, "PixelData")
                 else self.dir / "NoImageData"
-            )            
+            )
             target_folder.mkdir(exist_ok=True)
             dcm.rename(target_folder / dcm.name)
             # Send update to queue for progress bar visuals.

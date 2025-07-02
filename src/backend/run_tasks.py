@@ -90,6 +90,13 @@ def run_solo_task_on_folder(
         "MediumACRPhantom": True,
     }
 
+    if len(kwargs["input_data"]) != 11:
+        print(
+            f"Warning: For {in_subdir.name}, {task} could not be calculated because {in_subdir.name} contains an unexpected number of DICOMs. Expected 11 but received {len(kwargs["input_data"])}."
+        )
+        queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
+        return None
+
     if task == "SNR" and snr_helper.exists():
         kwargs["subtract"] = snr_helper
 
@@ -110,7 +117,7 @@ def format_results(results: dict) -> dict:
         dict: Formatted results in nested dictionary structure.
     """
     formatted_results = nested_dict()
-    for subdict in results:
+    for subdict in [r for r in results if r is not None]:
         file_value = subdict["file"]
 
         task_key = CLASS_STR_TO_TASK[subdict["task"]]
