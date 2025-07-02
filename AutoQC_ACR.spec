@@ -1,4 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
+
+"""AutoQC_ACR.spec
+
+This is a .spec file used to control the behaviour of pyinstaller when building a distributable .exe directory.
+Relevant binaries are collected and bundled, a splash screen is added and python code is converted to .pyc
+
+"""
+
 from PyInstaller.utils.hooks import collect_dynamic_libs
 
 binaries = [
@@ -8,7 +16,7 @@ binaries = [
 
 a = Analysis(  # type: ignore
     ["src/main.py"],
-    pathex=["src/backend/smaaf"],
+    pathex=[],
     binaries=binaries,
     datas=[],
     hiddenimports=[],

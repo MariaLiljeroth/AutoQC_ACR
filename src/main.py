@@ -1,4 +1,10 @@
-# This script is the entry point for AutoQC_ACR. An instance of the frontend App class is created and run
+"""
+main.py
+
+This script is the entry point for AutoQC_ACR.
+Controls most toplevel behaviour, creating App class and managing pyinstaller splash screen.
+
+"""
 
 import sys
 import multiprocessing as mp
