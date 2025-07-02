@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import tkinter as tk
+from tkinter import ttk
 from tkinter import filedialog
 import threading
 
@@ -8,7 +9,7 @@ from shared.context import AVAILABLE_TASKS
 from shared.queueing import get_queue
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from frontend.progress_bar_modal import ProgressBarModal
-from backend.sort_dicoms import DicomSorter
+from backend.dcm_objects.dcm_sorter import DcmSorter
 
 
 class FrameConfig(tk.Frame):
@@ -74,25 +75,22 @@ class FrameConfig(tk.Frame):
             "in_dir": tk.Entry(self, font=FONT_TEXT),
             "out_dir": tk.Entry(self, font=FONT_TEXT),
         }
-        self.listboxes = {
-            "subdirs": tk.Listbox(
+        self.treeviews = {
+            "sorted_subdirs": ttk.Treeview(
                 self,
-                selectmode=tk.EXTENDED,
-                font=FONT_TEXT,
-                selectforeground="black",
-                selectbackground="lightgray",
-                bd=1,
-                relief=tk.SOLID,
+                columns=("Name", "Date / Time"),
+                show="headings",
             )
         }
+
         self.scrollbars = {
-            "subdirs": tk.Scrollbar(
+            "sorted_subdirs": tk.Scrollbar(
                 self,
                 orient=tk.VERTICAL,
                 width=20,
                 bd=2,
                 relief=tk.SOLID,
-                command=self.listboxes["subdirs"].yview,
+                command=self.treeviews["sorted_subdirs"].yview,
             )
         }
 
@@ -141,7 +139,11 @@ class FrameConfig(tk.Frame):
 
     def _configure_widgets(self):
         """Configures widgets."""
-        self.listboxes["subdirs"].config(yscrollcommand=self.scrollbars["subdirs"].set)
+        self.treeviews["sorted_subdirs"].config(
+            yscrollcommand=self.scrollbars["sorted_subdirs"].set
+        )
+        for column_id in self.treeviews["sorted_subdirs"]["columns"]:
+            self.treeviews["sorted_subdirs"].heading(column_id, text=column_id)
 
     def _layout_widgets(self):
         """Lays out widgets."""
@@ -197,14 +199,14 @@ class FrameConfig(tk.Frame):
                     row=2, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
-        for key, widget in self.listboxes.items():
-            if key == "subdirs":
+        for key, widget in self.treeviews.items():
+            if key == "sorted_subdirs":
                 widget.grid(
                     row=3, column=1, sticky="nsew", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
         for key, widget in self.scrollbars.items():
-            if key == "subdirs":
+            if key == "sorted_subdirs":
                 widget.grid(row=3, column=2, sticky="nsw", pady=self.PAD_Y)
 
         for key, widget in self.checkbuttons.items():
@@ -235,17 +237,18 @@ class FrameConfig(tk.Frame):
         entry_widget.icursor(tk.END)
         entry_widget.xview_moveto(1)
 
-    def _populate_listbox_with_subdirs(self, listbox: tk.Listbox, in_dir: Path):
+    def _populate_treeview_with_subdirs(self, treeview: ttk.Treeview, in_dir: Path):
         """Populates a listbox widget with the subdirectories of a particular parent dir.
 
         Args:
             listbox (tk.Listbox): Listbox to populate with subdirectories.
             in_dir (Path): Path to parent directory.
         """
-        listbox.delete(0, tk.END)
-        for subdir in in_dir.iterdir():
-            if subdir.is_dir():
-                listbox.insert(tk.END, subdir.name)
+        for row in treeview.get_children():
+            treeview.delete(row)
+
+        for subdir in self.sorted_subdirs:
+            treeview.insert("", "end", values=(subdir.path.name, subdir.datetime))
 
     def _browse_in_dir(self):
         """Asks user to choose an input directory. This should be a directory full of
@@ -262,8 +265,10 @@ class FrameConfig(tk.Frame):
                 self.entries["out_dir"],
                 str((self.in_dir.parent / "AutoQC_ACR_Output").resolve()),
             )
-            self.modal_progress = ProgressBarModal(self, "Checking for DICOMs")
-            ds = DicomSorter(self.in_dir)
+            self.modal_progress = ProgressBarModal(
+                self, "Checking and reading loose DICOMs..."
+            )
+            ds = DcmSorter(self.in_dir)
             threading.Thread(target=ds.run).start()
 
     def _browse_out_dir(self):
@@ -345,20 +350,21 @@ class FrameConfig(tk.Frame):
         """
         if event[0] == "PROGRESS_BAR_UPDATE":
             # Triggers progress bar update during DICOM checking and sorting tasks.
-            if event[1] in ("DICOM_CHECKING", "DICOM_SORTING"):
+            if event[1] in ("DICOM_READING", "DICOM_SORTING"):
                 self.modal_progress.add_progress(event[2])
             else:
                 raise ValueError(f"Invalid progress bar ID: {event[1]}")
 
         if event[0] == "TASK_COMPLETE":
             # Triggers task completion events for DICOM checking and sorting tasks.
-            if event[1] == "DICOM_CHECKING":
+            if event[1] == "DICOM_READING":
                 # destroys current progress bar window and creates another for DICOM sorting task.
                 self.modal_progress.destroy()
-                self.modal_progress = ProgressBarModal(self, "Sorting loose DICOMs")
+                self.modal_progress = ProgressBarModal(self, "Sorting loose DICOMs...")
             elif event[1] == "DICOM_SORTING":
                 # destroys current progress bar window and populates listbox with subdirectories of input dir.
                 self.modal_progress.destroy()
-                self._populate_listbox_with_subdirs(
-                    self.listboxes["subdirs"], self.in_dir
+                self.sorted_subdirs = event[2]
+                self._populate_treeview_with_subdirs(
+                    self.treeviews["sorted_subdirs"], self.in_dir
                 )
