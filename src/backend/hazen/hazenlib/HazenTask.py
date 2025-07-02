@@ -6,7 +6,7 @@ import os
 import pathlib
 from pydicom import dcmread
 
-from backend.smaaf.hazenlib.logger import logger
+from backend.hazen.hazenlib.logger import logger
 
 
 class HazenTask:

@@ -8,9 +8,9 @@ from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit
 from scipy.special import sici
 
-from backend.smaaf.hazenlib.HazenTask import HazenTask
-from backend.smaaf.hazenlib.ACRObject import ACRObject
-from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+from backend.hazen.hazenlib.HazenTask import HazenTask
+from backend.hazen.hazenlib.ACRObject import ACRObject
+from backend.hazen.hazenlib.image_processing_tools.contour_validation import (
     is_slice_thickness_insert,
 )
 

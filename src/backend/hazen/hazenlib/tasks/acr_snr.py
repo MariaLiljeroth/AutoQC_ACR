@@ -18,9 +18,9 @@ import pydicom
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 import numpy as np
 
-from backend.smaaf.hazenlib import utils
-from backend.smaaf.hazenlib.HazenTask import HazenTask
-from backend.smaaf.hazenlib.ACRObject import ACRObject
+from backend.hazen.hazenlib import utils
+from backend.hazen.hazenlib.HazenTask import HazenTask
+from backend.hazen.hazenlib.ACRObject import ACRObject
 
 
 class ACRSNR(HazenTask):

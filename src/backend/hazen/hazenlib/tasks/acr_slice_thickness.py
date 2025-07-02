@@ -25,13 +25,13 @@ from scipy.signal import find_peaks, medfilt
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
 
-from backend.smaaf.hazenlib.HazenTask import HazenTask
-from backend.smaaf.hazenlib.ACRObject import ACRObject
-from backend.smaaf.hazenlib.image_processing_tools.slice_mask import SliceMask
-from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+from backend.hazen.hazenlib.HazenTask import HazenTask
+from backend.hazen.hazenlib.ACRObject import ACRObject
+from backend.hazen.hazenlib.image_processing_tools.slice_mask import SliceMask
+from backend.hazen.hazenlib.image_processing_tools.contour_validation import (
     is_slice_thickness_insert,
 )
-from backend.smaaf.hazenlib.utils import Point, Line, XY
+from backend.hazen.hazenlib.utils import Point, Line, XY
 
 
 class ACRSliceThickness(HazenTask):

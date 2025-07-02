@@ -19,8 +19,8 @@ yassine.azma@rmh.nhs.uk
 import os
 import numpy as np
 
-from backend.smaaf.hazenlib.HazenTask import HazenTask
-from backend.smaaf.hazenlib.ACRObject import ACRObject
+from backend.hazen.hazenlib.HazenTask import HazenTask
+from backend.hazen.hazenlib.ACRObject import ACRObject
 
 
 class ACRUniformity(HazenTask):

@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 from typing import Self
 
-from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+from backend.hazen.hazenlib.image_processing_tools.contour_validation import (
     is_phantom_edge,
 )
 

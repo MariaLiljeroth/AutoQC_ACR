@@ -4,7 +4,7 @@ import multiprocessing as mp
 from multiprocessing.managers import BaseProxy
 
 from backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
-from backend.smaaf.hazenlib.utils import get_dicom_files
+from backend.hazen.hazenlib.utils import get_dicom_files
 from backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
 from backend.dev_settings import FORCE_SEQUENTIAL_PROCESSING
 

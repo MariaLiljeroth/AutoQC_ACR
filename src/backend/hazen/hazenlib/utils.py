@@ -8,7 +8,7 @@ import numpy as np
 import cv2 as cv
 from skimage import filters, measure
 
-from backend.smaaf.hazenlib import exceptions as exc
+from backend.hazen.hazenlib import exceptions as exc
 
 P = TypeVar("P", bound="Point")
 L = TypeVar("L", bound="Line")
