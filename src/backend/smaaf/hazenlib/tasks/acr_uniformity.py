@@ -17,12 +17,10 @@ yassine.azma@rmh.nhs.uk
 """
 
 import os
-import sys
-import traceback
 import numpy as np
 
-from hazenlib.HazenTask import HazenTask
-from hazenlib.ACRObject import ACRObject
+from backend.smaaf.hazenlib.HazenTask import HazenTask
+from backend.smaaf.hazenlib.ACRObject import ACRObject
 
 
 class ACRUniformity(HazenTask):

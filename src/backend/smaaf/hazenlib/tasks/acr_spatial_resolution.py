@@ -1,24 +1,18 @@
 import os
-import sys
 
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-
-from hazenlib.HazenTask import HazenTask
-from hazenlib.ACRObject import ACRObject
-from hazenlib.contour_validation import is_slice_thickness_insert
-from hazenlib.utils import get_dicom_files
-
-import cv2
 import matplotlib.pyplot as plt
-
 import numpy as np
+import cv2
 
 from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit
 from scipy.special import sici
-from scipy.signal import savgol_filter
+
+from backend.smaaf.hazenlib.HazenTask import HazenTask
+from backend.smaaf.hazenlib.ACRObject import ACRObject
+from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+    is_slice_thickness_insert,
+)
 
 
 class ACRSpatialResolution(HazenTask):

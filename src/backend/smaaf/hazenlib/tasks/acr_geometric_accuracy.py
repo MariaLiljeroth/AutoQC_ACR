@@ -25,9 +25,9 @@ import cv2
 import matplotlib.patches as mpatches
 from pydicom.dataset import FileDataset
 
-from hazenlib.HazenTask import HazenTask
-from hazenlib.ACRObject import ACRObject
-from hazenlib.slice_mask import SliceMask
+from backend.smaaf.hazenlib.HazenTask import HazenTask
+from backend.smaaf.hazenlib.ACRObject import ACRObject
+from backend.smaaf.hazenlib.image_processing_tools.slice_mask import SliceMask
 
 
 class ACRGeometricAccuracy(HazenTask):

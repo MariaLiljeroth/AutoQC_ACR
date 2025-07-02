@@ -2,7 +2,9 @@ import numpy as np
 import cv2
 from typing import Self
 
-from hazenlib.contour_validation import is_phantom_edge
+from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+    is_phantom_edge,
+)
 
 
 class SliceMask(np.ndarray):
@@ -110,16 +112,6 @@ class SliceMask(np.ndarray):
         )
 
         return elliptical_mask, centre, approximate_radius
-
-    # def is_uniformity_slice_mask(self):
-    #     contours_filtered = [
-    #         c
-    #         for c in self.contours
-    #         if cv2.contourArea(cv2.convexHull(c)) >= (0.1 * self.shape[0]) ** 2
-    #     ]
-    #     bool_check = [is_phantom_edge(c, self.shape) for c in contours_filtered]
-    #     is_unif_slice = all(bool_check)
-    #     return is_unif_slice
 
     def get_scaled_mask(self, scale_factor):
         new_dims = tuple([int(scale_factor * dim) for dim in self.shape])

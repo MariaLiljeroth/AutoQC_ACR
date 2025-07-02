@@ -2,15 +2,16 @@ import os
 import numpy as np
 import skimage
 import cv2
-from scipy.ndimage import generic_filter
 
 from pydicom import dcmread
 from pydicom.dataset import FileDataset
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 
-from hazenlib.utils import get_image_orientation
-from hazenlib.slice_mask import SliceMask
-from hazenlib.contour_validation import is_slice_thickness_insert
+from backend.smaaf.hazenlib.utils import get_image_orientation
+from backend.smaaf.hazenlib.image_processing_tools.slice_mask import SliceMask
+from backend.smaaf.hazenlib.image_processing_tools.contour_validation import (
+    is_slice_thickness_insert,
+)
 
 
 class ACRObject:

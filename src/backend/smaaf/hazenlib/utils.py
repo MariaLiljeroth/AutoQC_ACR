@@ -1,22 +1,19 @@
 import os
-import cv2 as cv
-import pydicom
 import imutils
-import matplotlib
-import numpy as np
-import matplotlib.pyplot as plt
-import pathlib
-
-from collections import defaultdict
-from skimage import filters, measure
 from typing import Union, TypeVar
+import pydicom
+from collections import defaultdict
 
-import hazenlib.exceptions as exc
-from hazenlib.logger import logger
+import numpy as np
+import cv2 as cv
+from skimage import filters, measure
+
+from backend.smaaf.hazenlib import exceptions as exc
 
 P = TypeVar("P", bound="Point")
 L = TypeVar("L", bound="Line")
 xy = TypeVar("xy", bound="XY")
+
 
 def GetDicomTag(dcm, tag):
     for elem in dcm.iterall():
@@ -103,7 +100,11 @@ def get_manufacturer(dcm: pydicom.Dataset) -> str:
 def get_average(dcm: pydicom.Dataset) -> float:
     try:
         if is_enhanced_dicom(dcm):
-            averages = dcm.SharedFunctionalGroupsSequence[0].MRAveragesSequence[0].NumberOfAverages
+            averages = (
+                dcm.SharedFunctionalGroupsSequence[0]
+                .MRAveragesSequence[0]
+                .NumberOfAverages
+            )
         else:
             averages = dcm.NumberOfAverages
     except:
@@ -154,11 +155,15 @@ def get_slice_thickness(dcm: pydicom.Dataset) -> float:
     if is_enhanced_dicom(dcm):
         try:
             slice_thickness = (
-                dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness
+                dcm.PerFrameFunctionalGroupsSequence[0]
+                .PixelMeasuresSequence[0]
+                .SliceThickness
             )
         except AttributeError:
             slice_thickness = (
-                dcm.PerFrameFunctionalGroupsSequence[0].Private_2005_140f[0].SliceThickness
+                dcm.PerFrameFunctionalGroupsSequence[0]
+                .Private_2005_140f[0]
+                .SliceThickness
             )
         except Exception:
             raise Exception("Unrecognised metadata Field for Slice Thickness")
@@ -172,7 +177,11 @@ def get_pixel_size(dcm: pydicom.Dataset) -> tuple[float, float]:
     manufacturer = get_manufacturer(dcm)
     try:
         if is_enhanced_dicom(dcm):
-            dx, dy = dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing
+            dx, dy = (
+                dcm.PerFrameFunctionalGroupsSequence[0]
+                .PixelMeasuresSequence[0]
+                .PixelSpacing
+            )
         else:
             dx, dy = dcm.PixelSpacing
     except:
@@ -223,7 +232,9 @@ def get_rows(dcm: pydicom.Dataset) -> float:
     try:
         rows = dcm.Rows
     except:
-        print("Warning: Could not find Number of matrix rows. Using default value of 256")
+        print(
+            "Warning: Could not find Number of matrix rows. Using default value of 256"
+        )
         rows = 256
 
     return rows
@@ -244,7 +255,9 @@ def get_columns(dcm: pydicom.Dataset) -> float:
     try:
         columns = dcm.Columns
     except:
-        print("Warning: Could not find matrix size (columns). Using default value of 256.")
+        print(
+            "Warning: Could not find matrix size (columns). Using default value of 256."
+        )
         columns = 256
     return columns
 
@@ -261,7 +274,9 @@ def get_field_of_view(dcm: pydicom.Dataset):
         if is_enhanced_dicom(dcm):
             fov = (
                 dcm.Columns
-                * dcm.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]
+                * dcm.PerFrameFunctionalGroupsSequence[0]
+                .PixelMeasuresSequence[0]
+                .PixelSpacing[0]
             )
         else:
             fov = dcm.Columns * dcm.PixelSpacing[0]
@@ -286,8 +301,8 @@ def get_image_orientation(iop):
     """
     iop_round = [round(x) for x in iop]
     plane = np.cross(iop_round[0:3], iop_round[3:6])
-    #Orient=elem=iop[0x0020,0x0037]
-    #plane = np.cross(Orient[0:3], Orient[3:6])
+    # Orient=elem=iop[0x0020,0x0037]
+    # plane = np.cross(Orient[0:3], Orient[3:6])
     plane = [abs(x) for x in plane]
     if plane[0] == 1:
         return "Sagittal"
@@ -364,7 +379,9 @@ class ShapeDetector:
         optimal_threshold = filters.threshold_li(
             self.blurred, initial_guess=np.quantile(self.blurred, 0.50)
         )
-        self.thresh = np.where(self.blurred > optimal_threshold, 255, 0).astype(np.uint8)
+        self.thresh = np.where(self.blurred > optimal_threshold, 255, 0).astype(
+            np.uint8
+        )
 
         # have to convert type for find contours
         contours = cv.findContours(self.thresh, cv.RETR_TREE, 1)
@@ -508,7 +525,7 @@ class Point(np.ndarray):
         if not isinstance(other, Point):
             err = f"other should be Point and not {type(other)}"
             raise TypeError(err)
-        return np.sqrt(np.sum((self - other)**2)).item()
+        return np.sqrt(np.sum((self - other) ** 2)).item()
 
     def __iter__(self):
         """Get iterable for plotting"""
@@ -537,7 +554,9 @@ class Line:
     @property
     def length(self):
         """Property for length of line"""
-        return np.sqrt((self.start.x - self.end.x)**2 + (self.start.y - self.end.y)**2)
+        return np.sqrt(
+            (self.start.x - self.end.x) ** 2 + (self.start.y - self.end.y) ** 2
+        )
 
     def get_signal(self, refImg: np.ndarray) -> None:
         """Gets signal across line using pixel values from reference image
@@ -553,7 +572,7 @@ class Line:
         )
 
         # multiply x by correction factor to ensure that sampled points are a distance of one pixel apart
-        self.signal = XY(range(len(signal)) * self.length/len(signal), signal)
+        self.signal = XY(range(len(signal)) * self.length / len(signal), signal)
 
     def get_subline(self, perc: Union[int, float]) -> L:
         """Returns a "subline" of self.
@@ -594,7 +613,6 @@ class Line:
         if hasattr(self, "signal"):
             self.signal = self.signal[::-1]
 
-
     def __iter__(self) -> iter:
         """Get iterable for plotting"""
         points = (self.start, self.end)
@@ -604,5 +622,3 @@ class Line:
         """Get string representation"""
         s = f"Line(start={self.start}, end={self.end})"
         return s
-
-

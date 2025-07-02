@@ -14,17 +14,13 @@ Created by Neil Heraghty (Adapted by Yassine Azma)
 """
 
 import os
-import sys
-import traceback
 import pydicom
-
-import numpy as np
-from scipy import ndimage
-
-import hazenlib.utils
-from hazenlib.HazenTask import HazenTask
-from hazenlib.ACRObject import ACRObject
 from pydicom.pixel_data_handlers.util import apply_modality_lut
+import numpy as np
+
+from backend.smaaf.hazenlib import utils
+from backend.smaaf.hazenlib.HazenTask import HazenTask
+from backend.smaaf.hazenlib.ACRObject import ACRObject
 
 
 class ACRSNR(HazenTask):
@@ -379,18 +375,18 @@ class ACRSNR(HazenTask):
         Returns:
             float: normalisation factor
         """
-        dx, dy = hazenlib.utils.get_pixel_size(dcm)
-        bandwidth = hazenlib.utils.get_bandwidth(dcm)
-        TR = hazenlib.utils.get_TR(dcm)
-        rows = hazenlib.utils.get_rows(dcm)
-        columns = hazenlib.utils.get_columns(dcm)
+        dx, dy = utils.get_pixel_size(dcm)
+        bandwidth = utils.get_bandwidth(dcm)
+        TR = utils.get_TR(dcm)
+        rows = utils.get_rows(dcm)
+        columns = utils.get_columns(dcm)
 
         if measured_slice_width:
             slice_thickness = measured_slice_width
         else:
-            slice_thickness = hazenlib.utils.get_slice_thickness(dcm)
+            slice_thickness = utils.get_slice_thickness(dcm)
 
-        averages = hazenlib.utils.get_average(dcm)
+        averages = utils.get_average(dcm)
         bandwidth_factor = np.sqrt((bandwidth * columns / 2) / 1000) / np.sqrt(30)
         voxel_factor = 1 / (0.001 * dx * dy * slice_thickness)
 

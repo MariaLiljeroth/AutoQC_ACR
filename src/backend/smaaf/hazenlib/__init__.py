@@ -114,8 +114,8 @@ import logging
 import importlib
 
 from docopt import docopt
-from hazenlib.utils import get_dicom_files
-from hazenlib._version import __version__
+from backend.smaaf.hazenlib.utils import get_dicom_files
+from backend.smaaf.hazenlib._version import __version__
 
 """
 Hazen is designed to measure the same parameters from multiple images.

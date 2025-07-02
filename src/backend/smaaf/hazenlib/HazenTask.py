@@ -1,11 +1,12 @@
 """
 HazenTask.py
 """
+
 import os
 import pathlib
 from pydicom import dcmread
 
-from hazenlib.logger import logger
+from backend.smaaf.hazenlib.logger import logger
 
 
 class HazenTask:
