@@ -12,7 +12,7 @@ class DicomSorter:
         dir (Path): Directory containing DICOM files.
         uid_suffix_mapper (dict[str, str]): Dictionary mapping SeriesInstanceUID to suffixes.
             Useful for Siemens scanners with duplicate data sets (see SNR by subtraction)
-        tracked_series_descs (list[str]): List of Serieseries_desction values that have been tracked.
+        tracked_series_descs (list[str]): List of SeriesDescription values that have been tracked.
     """
 
     TRANSLATION_TABLE = str.maketrans({c: "_" for c in '\\/:*?"<>|'})
@@ -35,13 +35,13 @@ class DicomSorter:
             metadata = pydicom.dcmread(dcm)
 
             # Check whether all tags exist that are needed for meaningful analysis.
-            required_tags = ("SeriesInstanceUID", "Serieseries_desction", "PixelData")
+            required_tags = ("SeriesInstanceUID", "SeriesDescription", "PixelData")
             required_tags_exist = all([hasattr(metadata, tag) for tag in required_tags])
 
             if required_tags_exist:
                 # get uid and series description
                 uid = metadata.get("SeriesInstanceUID")
-                series_desc = metadata.get("Serieseries_desction")
+                series_desc = metadata.get("SeriesDescription")
 
                 # clean s_descrip to make safe for file explorer paths
                 series_desc = series_desc.translate(self.TRANSLATION_TABLE)
@@ -91,7 +91,7 @@ class DicomSorter:
 
         Args:
             uid (str): SeriesInstanceUID DICOM tag
-            series_desc (str): Serieseries_desction DICOM tag
+            series_desc (str): SeriesDescription DICOM tag
         """
         if series_desc not in self.tracked_series_descs:
             self.tracked_series_descs.append(series_desc)

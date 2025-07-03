@@ -1,19 +1,31 @@
+"""
+frame_config.py
+
+This file defines the FrameConfig tk.Frame subclass, whose purpose is to allow the user to configure AutoQC_ACR settings before running it.
+This frame is the first frame to appear within the App instance, and is swapped out to FrameTaskRunner instance once hazen tasks begin running.
+
+"""
+
 from pathlib import Path
+import threading
 
 import tkinter as tk
 from tkinter import filedialog
-import threading
 
 from shared.context import AVAILABLE_TASKS
 from shared.queueing import get_queue
+
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from frontend.progress_bar_modal import ProgressBarModal
+
 from backend.sort_dicoms import DicomSorter
 
 
 class FrameConfig(tk.Frame):
-    """Subclass of tk.Frame.
-    For the user to configure settings for AutoQC_ACR application.
+    """Subclass of tk.Frame that allows the user to configure settings for
+    AutoQC_ACR, before the tasks begin running. The user sets the input dicom directory,
+    output dicom directory and selects the sorted subdirectories to analyse. The
+    specific tasks to run are also selected.
 
     Instance attributes:
         frames (dict[str, tk.Frame]): Dictionary of frame widgets.
@@ -23,8 +35,8 @@ class FrameConfig(tk.Frame):
         scrollbars (dict[str, tk.Scrollbar]): Dictionary of scrollbar widgets.
         checkbuttons (dict[str, dict[str, list[tk.Checkbutton | tk.BooleanVar]]]): Dictionary of checkbutton widgets and associated boolean vars.
         buttons (dict[str, tk.Button]): Dictionary of button widgets.
-        modal_progress (ProgressBarModal): Progress bar modal for displaying progress during DICOM checking and sorting tasks.
-        in_dir (Path): Input directory selected by the user.
+        modal_progress (ProgressBarModal): Modal progress bar window for displaying progress during DICOM checking and sorting tasks.
+        in_dir (Path): Input directory selected by the user (should contain unsorted DICOMs or folders previously sorted).
 
     Class attributes:
         GRID_DIMS (tuple): A tuple of expected grid dimensions for tk.widget.grid()
@@ -37,22 +49,37 @@ class FrameConfig(tk.Frame):
     PAD_Y = (0, 15)
 
     def __init__(self, master: tk.Tk):
-        """Initialises FrameConfig instance. Creates, configures and lays out widgets.
+        """Initialises FrameConfig instance. Creates, configures
+        and lays out widgets within self.
 
         Args:
-            master (tk.Tk): Root window of tk application.
+            master (tk.Tk): Root window from on which self is placed.
         """
         super().__init__(master)
 
+        # Create, configure widgets for self.
         self._create_widgets()
+
+        # Configure created widgets.
         self._configure_widgets()
+
+        # Layout widgets within self
         self._layout_widgets()
+
+        # Configure tk grid dimensions
         self._configure_grid()
+
+        # Set to None as no modal progress bar exists at initialisation.
         self.modal_progress = None
 
     def _create_widgets(self):
-        """Creates widgets"""
+        """Creates widgets within self."""
+
+        # Dict containing string-id and widget pairs for all frames within self.
         self.frames = {"task_checkbuttons": tk.Frame(self, bd=1, relief=tk.SOLID)}
+
+        # Dict containing string-id and widget pairs for all labels within self.
+        # Labels are used to convey information about how the user should interact with the GUI.
         self.labels = {
             "title": tk.Label(
                 self,
@@ -70,10 +97,16 @@ class FrameConfig(tk.Frame):
             ),
             "select_tasks": tk.Label(self, text="Select tasks to run:", font=FONT_TEXT),
         }
+
+        # Dict containing string-id and widget pairs for all entries within self.
+        # Seperate entries exist for displaying the selected input and output toplevel directories.
         self.entries = {
             "in_dir": tk.Entry(self, font=FONT_TEXT),
             "out_dir": tk.Entry(self, font=FONT_TEXT),
         }
+
+        # Dict containing string-id and widget pairs for all listboxes within self.
+        # subdirs listbox used to select which sorted DICOM subdirectories are used for task running.
         self.listboxes = {
             "subdirs": tk.Listbox(
                 self,
@@ -85,6 +118,9 @@ class FrameConfig(tk.Frame):
                 relief=tk.SOLID,
             )
         }
+
+        # Dict containing string-id and widget pairs for all scrollbars within self.
+        # subdirs scrollbar scrolls the subdirs listbox for the case of many dirs displayed.
         self.scrollbars = {
             "subdirs": tk.Scrollbar(
                 self,
@@ -96,7 +132,12 @@ class FrameConfig(tk.Frame):
             )
         }
 
+        # Create a boolean var associated with every task to track state of each task tickbox.
         bool_vars_tasks = [tk.BooleanVar(value=True) for _ in AVAILABLE_TASKS]
+
+        # Dict containing info for all checkbuttons within self.
+        # The toplevel key represents the string-id for a given set of checkbuttons.
+        # The lower "checkbuttons" key returns the list of checkbox widgets and "bool_vars" returns their state.
         self.checkbuttons = {
             "tasks": {
                 "checkbuttons": [
@@ -112,6 +153,8 @@ class FrameConfig(tk.Frame):
             },
         }
 
+        # Dict containing string-id and widget pairs for all buttons within self.
+        # buttons exist for browsing input and output directories plus for initialising task running process.
         self.buttons = {
             "browse_in_dir": tk.Button(
                 self,
