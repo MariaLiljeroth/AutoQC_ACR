@@ -19,16 +19,41 @@ def is_slice_thickness_insert(contour: np.ndarray, source_image_shape: tuple):
     bool:
         True if contour is slice thickness insert, false otherwise.
     """
-    height_image, width_image = source_image_shape
-    _, (width, height), _ = cv2.minAreaRect(contour)
+    # Define ideal height, width and perimeter
+    height_ideal = 0.04 * source_image_shape[0]
+    width_ideal = 0.65 * source_image_shape[1]
+    hull = cv2.convexHull(contour)
+    perimeter_ideal = cv2.arcLength(hull, True)
 
-    if width < height:
-        width, height = height, width
+    # Define tolerances
+    tolerance_height = 0.5 * height_ideal
+    tolerance_width = 0.15 * width_ideal
+    tolerance_perimeter = 0.1 * perimeter_ideal
 
-    width_check = 0.55 * width_image <= width <= 0.75 * width_image
-    height_check = 0.02 * height_image <= height <= 0.06 * height_image
+    # Get rect true width and height from minAreaRect
+    _, (width_true, height_true), _ = cv2.minAreaRect(contour)
+    if width_true < height_true:
+        width_true, height_true = height_true, width_true
 
-    return width_check and height_check
+    # Get contour true perimeter
+    perimeter_true = cv2.arcLength(contour, True)
+
+    # bool checks
+    height_check = (
+        height_ideal - tolerance_height
+        <= height_true
+        <= height_ideal + tolerance_height
+    )
+    width_check = (
+        width_ideal - tolerance_width <= width_true <= width_ideal + tolerance_width
+    )
+    perimeter_check = (
+        perimeter_ideal - tolerance_perimeter
+        <= perimeter_true
+        <= perimeter_ideal + tolerance_perimeter
+    )
+
+    return height_check and width_check and perimeter_check
 
 
 def is_phantom_edge(contour, source_image_shape):

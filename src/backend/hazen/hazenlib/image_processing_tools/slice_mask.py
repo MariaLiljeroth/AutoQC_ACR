@@ -22,7 +22,7 @@ class SliceMask(np.ndarray):
     def dynamically_threshold(
         cls,
         image,
-        closing_strength=3,
+        closing_strength=7,
         mode_findContours=cv2.RETR_TREE,
         dynamic_thresh_start=4,
         additional_contour_check=None,
@@ -37,7 +37,7 @@ class SliceMask(np.ndarray):
             )
 
             if cls._expected_contours_visible(contours, mask, additional_contour_check):
-                pad = 15
+                pad = 0
                 mask_padded, contours_final = cls._get_mask_and_contours(
                     image_preprocessed, dynamic_thresh + pad, mode_findContours
                 )
@@ -55,8 +55,12 @@ class SliceMask(np.ndarray):
         image_normalized = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(
             "uint8"
         )
+
         image_denoised = cv2.fastNlMeansDenoising(
-            image_normalized, h=np.std(image_normalized) * 0.4
+            image_normalized,
+            h=np.std(image_normalized) * 0.25,
+            templateWindowSize=3,
+            searchWindowSize=11,
         )
 
         kernel_closing = cv2.getStructuringElement(
