@@ -1,3 +1,15 @@
+"""
+run_tasks.py
+
+This script defines functions that are used to run the specified Hazen tasks in the backend.
+Multiprocessing is utilised to vastly speed up task running, based on the number of CPU cores
+compared to the number of Hazen tasks requested. The tasks results are sent to the frontend via
+the global queue.
+
+Written by Nathan Crossley 2025
+
+"""
+
 from pathlib import Path
 
 import multiprocessing as mp
@@ -13,9 +25,11 @@ from shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
 
 
 def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]):
-    """Runs all tasks on all in_subdirs, outputting to relevant out_subdirs.
-    Utilises serial or multiprocessing depending on the number of jobs.
-    A job is defined by a specific set of args to run a task with, e.g. input and output
+    """Runs all specified tasks on all input subdirectories, saving plots to the corresponding.
+    output subdirectories. Utilises serial or multiprocessing depending on the number of CPU
+    cores available and how many Hazen jobs are requested.
+
+    For clarity, a "job" is defined by a specific set of args to run a task with, e.g. input and output
     subdirs, the specific task etc. A task is the specific Hazen task e.g. SNR, Uniformity etc.
 
     Args:
@@ -26,17 +40,24 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
 
     # Formulate job_args, a list of the args to pass to individual jobs.
     # Collect the input and output subdirs, task, queue and progress bar contribution.
+
+    # get multiprocessing queue
     queue = get_queue()
+
+    # calculate the number of jobs requested
     num_jobs = len(in_subdirs) * len(tasks_to_run)
+
+    # calculate the progress bar change associated with the completion of a single job.
     d_prog_bar = 1 / num_jobs * 100
 
+    # zip up arguments for individual jobs.
     job_args = [
         (in_subdir, out_subdir, task, queue, d_prog_bar)
         for in_subdir, out_subdir in zip(in_subdirs, out_subdirs)
         for task in tasks_to_run
     ]
 
-    # Assign number of workers based on number of jobs
+    # define relationship between number of jobs and number of multiprocessing workers assigned
     jobs_per_task = len(in_subdirs)
     num_jobs_num_workers_mapping = (
         (0, jobs_per_task, 1),
@@ -45,6 +66,7 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
         (4 * jobs_per_task + 1, 100 * jobs_per_task, 5),
     )
 
+    # apply above relationship to work out how many workers will be assigned
     for lower, upper, num_workers in num_jobs_num_workers_mapping:
         if lower <= num_jobs <= upper:
             num_workers = (
@@ -54,15 +76,21 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
             )
             break
 
-    # Run with either parallelism or serial processing.
+    # Run with either parallelism or serial processing based on number of workers
     if num_workers > 1:
+
+        # create multiprocessing pool, running solo task running func with job arguments
         with mp.Pool(processes=num_workers) as pool:
             results = pool.starmap(run_solo_task_on_folder, job_args)
+
     else:
+        # run tasks serially (no multiprocessing)
         results = [run_solo_task_on_folder(*args) for args in job_args]
 
-    # Format results in nested dictionary structure and send via queue.
+    # Format results in nested dictionary structure (for clarity and ease of dataframe construction)
     formatted_results = format_results(results)
+
+    # signal to queue that task running process has been completed and send results
     get_queue().put(("TASK_COMPLETE", "TASK_RUNNING", formatted_results))
 
 
