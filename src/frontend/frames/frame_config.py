@@ -39,7 +39,7 @@ class FrameConfig(tk.Frame):
         in_dir (Path): Input directory selected by the user (should contain unsorted DICOMs or folders previously sorted).
 
     Class attributes:
-        GRID_DIMS (tuple): A tuple of expected grid dimensions for tk.widget.grid()
+        GRID_DIMS (tuple): A tuple of expected grid dimensions for grid within self.
         PAD_X (tuple): Standardised x-padding between grid columns.
         PAD_Y (tuple): Standardised y-padding between grid rows.
     """
@@ -57,16 +57,12 @@ class FrameConfig(tk.Frame):
         """
         super().__init__(master)
 
-        # Create, configure widgets for self.
+        # Create, configure and layout widgets within self.
         self._create_widgets()
-
-        # Configure created widgets.
         self._configure_widgets()
-
-        # Layout widgets within self
         self._layout_widgets()
 
-        # Configure tk grid dimensions
+        # Configure grid dimensions within self.
         self._configure_grid()
 
         # Set to None as no modal progress bar exists at initialisation.
