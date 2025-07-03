@@ -183,11 +183,13 @@ class FrameConfig(tk.Frame):
         }
 
     def _configure_widgets(self):
-        """Configures widgets."""
+        """Configures widgets within self"""
+        # link subdirs listbox to subdirs scrollbar.
         self.listboxes["subdirs"].config(yscrollcommand=self.scrollbars["subdirs"].set)
 
     def _layout_widgets(self):
-        """Lays out widgets."""
+        """Lays out widgets within self."""
+        # position all labels within grid of self
         for key, widget in self.labels.items():
             if key == "title":
                 widget.grid(
@@ -214,6 +216,7 @@ class FrameConfig(tk.Frame):
                     row=4, column=0, sticky="nw", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
+        # position all buttons within grid of self
         for key, widget in self.buttons.items():
             if key == "browse_in_dir":
                 widget.grid(row=1, column=2, sticky="w", pady=self.PAD_Y)
@@ -224,12 +227,14 @@ class FrameConfig(tk.Frame):
                     row=5, column=0, columnspan=self.GRID_DIMS[0], sticky="ew", padx=50
                 )
 
+        # position all frames within grid of self
         for key, widget in self.frames.items():
             if key == "task_checkbuttons":
                 widget.grid(
                     row=4, column=1, sticky="nsw", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
+        # position all entries within grid of self
         for key, widget in self.entries.items():
             if key == "in_dir":
                 widget.grid(
@@ -240,131 +245,183 @@ class FrameConfig(tk.Frame):
                     row=2, column=1, sticky="ew", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
+        # position all listboxes within grid of self
         for key, widget in self.listboxes.items():
             if key == "subdirs":
                 widget.grid(
                     row=3, column=1, sticky="nsew", padx=self.PAD_X, pady=self.PAD_Y
                 )
 
+        # position all scrollbars within grid of self
         for key, widget in self.scrollbars.items():
             if key == "subdirs":
                 widget.grid(row=3, column=2, sticky="nsw", pady=self.PAD_Y)
 
+        # position all lcheckboxes within their frame.
         for key, widget in self.checkbuttons.items():
             if key == "tasks":
                 for checkbutton in widget["checkbuttons"]:
                     checkbutton.pack(anchor="w", padx=self.PAD_Y)
 
     def _configure_grid(self):
-        """Configures grid weights and min row/col sizes for self."""
+        """Configures weights and minimum sizes for columns and
+        rows within grid of self."""
+
+        # set column weights and minimum sizes
         self.columnconfigure(0, weight=0, minsize=0)
         self.columnconfigure(1, weight=1, minsize=400)
         self.columnconfigure(2, weight=0, minsize=0)
 
+        # set row weights and minimum sizes
         self.rowconfigure(0, weight=0, minsize=0)
         self.rowconfigure(1, weight=0, minsize=0)
         self.rowconfigure(2, weight=0, minsize=50)
         self.rowconfigure(3, weight=1, minsize=0)
 
     def _populate_entry_widget(self, entry_widget: tk.Entry, text: str):
-        """Populates an entry widget with a string, deleting current content.
+        """Populates an entry widget with a text string, deleting current content.
 
         Args:
             entry_widget (tk.Entry): Entry widget to populate.
             text (str): String to populate entry widget with.
         """
+        # delete all content in entry widget
         entry_widget.delete(0, tk.END)
+
+        # insert text within entry widget
         entry_widget.insert(0, text)
+
+        # ensure that start of entry widget's text is visible
         entry_widget.icursor(tk.END)
         entry_widget.xview_moveto(1)
 
-    def _populate_listbox_with_subdirs(self, listbox: tk.Listbox, in_dir: Path):
+    def _populate_listbox_with_subdirs(self, listbox: tk.Listbox, dir: Path):
         """Populates a listbox widget with the subdirectories of a particular parent dir.
 
         Args:
             listbox (tk.Listbox): Listbox to populate with subdirectories.
-            in_dir (Path): Path to parent directory.
+            dir (Path): Path to parent directory.
         """
+
+        # remove all current listbox items
         listbox.delete(0, tk.END)
-        for subdir in in_dir.iterdir():
+
+        # get all subdirs or parent dir and append to listbox
+        for subdir in dir.iterdir():
             if subdir.is_dir():
                 listbox.insert(tk.END, subdir.name)
 
     def _browse_in_dir(self):
-        """Asks user to choose an input directory. This should be a directory full of
-        sorted or unsorted DICOMs. Populates self.entry_in_dir with the users choice,
-        populates self.entry_out_dir with default output dir and starts a thread to
-        execute DICOM sorting process.
+        """Asks user to choose an input directory (activated by a button).
+        This should be a directory full of sorted or unsorted DICOMs.
+        Populates in_dir entry with the users choice, populates out_dir
+        entry with default output dir and starts a thread to execute
+        DICOM sorting process.
         """
+
+        # get user to select input directory through basic gui
         self.in_dir = Path(filedialog.askdirectory(title="Select Input Directory"))
+
         if self.in_dir:
+            # populates in_dir entry widget with selected input directory
             self._populate_entry_widget(
                 self.entries["in_dir"], str(self.in_dir.resolve())
             )
+
+            # populates out_dir entry widget with default output directory based on input directory
             self._populate_entry_widget(
                 self.entries["out_dir"],
                 str((self.in_dir.parent / "AutoQC_ACR_Output").resolve()),
             )
+
+            # Instantiates a modal window for progress bar
             self.modal_progress = ProgressBarModal(self, "Checking for DICOMs")
+
+            # Instantiates an instance of class for sorting DICOMs
             ds = DicomSorter(self.in_dir)
+
+            # starts running DICOM sorting process in separate thread to prevent blocking gui
             threading.Thread(target=ds.run).start()
 
     def _browse_out_dir(self):
-        """Asks user to choose an output directory for results.
+        """Asks user to choose an output directory for results (activated through button).
         Populates self.entry_out_dir with the users choice
         """
+
+        # gets user to select output directory through gui
         out_dir = Path(filedialog.askdirectory(title="Select Output Directory"))
+
         if out_dir:
+            # populate output directory entry widget with user's choice
             self._populate_entry_widget(self.entries["out_dir"], str(out_dir.resolve()))
 
     def _read_config_settings(self):
-        """Pulls configuration settings from widgets after performing relevant validation checks.
-        Sends a message to global queue to switch frame to 'TASKRUNNER', also passing configuration settings.
+        """Pulls configuration settings from widgets after performing relevant
+        validation checks. Sends a message to global queue to switch frame to
+        'TASKRUNNER', also passing configuration settings.
         """
+
+        # get input directory from relevant entry widget
         in_dir = Path(self.entries["in_dir"].get())
+
+        # Check that in_dir is not "." (the fallback option from gui) and that it also exists and is a directory
         if str(in_dir) == "." or not in_dir.is_dir() or not in_dir.exists():
             tk.messagebox.showerror("Error", "Input directory is invalid!")
             return
 
-        # Check for valid in_subdir selection
+        # get input subdirectories from relevant listbox
         in_subdirs = [
             in_dir / self.listboxes["subdirs"].get(i)
             for i in self.listboxes["subdirs"].curselection()
         ]
+
+        # check that 1+ subdirectories have been selected
         if not in_subdirs:
             tk.messagebox.showerror("Error", "No subdirectories selected!")
             return
 
-        # Check for valid out_dir selection
+        # get output directory from relevant entry widget
         out_dir = Path(self.entries["out_dir"].get())
+
+        # Check that out_dir is not "." (the fallback option from gui) and that it's a directory
         if str(out_dir) == "." or not in_dir.is_dir():
             tk.messagebox.showerror("Error", "Output directory is invalid!")
             return
+
+        # if doesn't exist, ask user whether they want to proceed
         elif not out_dir.exists():
             proceed = tk.messagebox.askyesno(
                 "Confirm",
                 "Output directory does not currently exist!\nCreate directory and run?",
             )
+
+            # if wants to proceed, make out_dir
             if proceed:
                 out_dir.mkdir()
+
+            # otherwise cancel process and go back to responsive gui
             else:
                 return
 
-        # Make out_subdirs if don't exist
+        # infer output subdirectories from input subdirectories
         out_subdirs = [out_dir / subdir.name for subdir in in_subdirs]
 
+        # Check whether any output subdirectories do not exist, and if the user is happy to overwrite contents
         if any(out_subdir.exists() for out_subdir in out_subdirs):
             overwrite = tk.messagebox.askyesno(
                 "Confirm",
                 "Some output subdirectories already exist!\nOverwrite where necessary?",
             )
+
+            # if user does not want to overwrite, cancel process
             if not overwrite:
                 return
 
+        # make all output subdirectories
         for out_subdir in out_subdirs:
             out_subdir.mkdir(exist_ok=True)
 
-        # Check that at least one task is selected
+        # get all hazen tasks selected by user
         tasks_to_run = [
             check_button.cget("text")
             for check_button, var in zip(
@@ -373,35 +430,55 @@ class FrameConfig(tk.Frame):
             )
             if var.get() == 1
         ]
+
+        # if no tasks selected, cancel process
         if not tasks_to_run:
             tk.messagebox.showerror("Error", "No tasks selected!")
             return
 
+        # construct tuple of args to pass to taskrunner frame
         args_to_pass = (in_dir, out_dir, in_subdirs, out_subdirs, tasks_to_run)
+
+        # signal a switch to taskrunner frame and pass args
         get_queue().put(("SWITCH_FRAME", "TASKRUNNER", args_to_pass))
 
     def handle_event(self, event: tuple):
-        """Handles events passed from main event queue (see App._check_queue).
+        """Handles specific events passed through from main event
+        queue (see App._check_queue).
 
         Args:
-            event (tuple): Tuple containing unique event trigger strings.
+            event (tuple): Tuple containing unique event trigger strings
+                (see shared/queueing.py).
         """
+
+        # Handle events relating to a progress bar update
         if event[0] == "PROGRESS_BAR_UPDATE":
-            # Triggers progress bar update during DICOM checking and sorting tasks.
+
+            # Triggers progress bar update during DICOM checking and sorting tasks
             if event[1] in ("DICOM_CHECKING", "DICOM_SORTING"):
                 self.modal_progress.add_progress(event[2])
+
+            # If try to access a progress bar that is not recognised, throw error
             else:
                 raise ValueError(f"Invalid progress bar ID: {event[1]}")
 
+        # Handle events relating to a particular task being completed
         if event[0] == "TASK_COMPLETE":
-            # Triggers task completion events for DICOM checking and sorting tasks.
+
+            # Triggers when software finished checking for valid DICOMs
             if event[1] == "DICOM_CHECKING":
-                # destroys current progress bar window and creates another for DICOM sorting task.
+
+                # destroys modal progress bar window for dicom checking and creates a new one for dicom sorting
                 self.modal_progress.destroy()
                 self.modal_progress = ProgressBarModal(self, "Sorting loose DICOMs")
+
+            # Triggers when software finished sorting loose DICOMs
             elif event[1] == "DICOM_SORTING":
-                # destroys current progress bar window and populates listbox with subdirectories of input dir.
+
+                # destroys modal progress bar window for dicom sorting
                 self.modal_progress.destroy()
+
+                # populates listbox with subdirectories of input directory
                 self._populate_listbox_with_subdirs(
                     self.listboxes["subdirs"], self.in_dir
                 )
