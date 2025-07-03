@@ -1,23 +1,38 @@
+"""
+utils.py
+
+This script stores miscellaneous utility functions for use throughout the backend.
+Note that hazen itself has a utility script too, so this script is designed for more top-level backend utility.
+
+Written by Nathan Crossley 2025
+
+"""
+
+from pathlib import Path
 from collections import defaultdict
 from thefuzz import fuzz
-from pathlib import Path
 import pydicom
 
 
-def nested_dict():
-    """Creates a nested defaultdict with a default factory of another defaultdict."""
+def nested_dict() -> defaultdict:
+    """Returns a nested defaultdict that automatically creates deeper levels
+    of dictionaries as needed. Useful for building recursive or multi-level
+    dictionary structures without manually checking or initializing intermediate keys.
+    """
     return defaultdict(nested_dict)
 
 
 def defaultdict_to_dict(d: defaultdict) -> dict:
-    """Recursively converts a defaultdict to a regular dict.
+    """Recursively converts a nested defaultdict (like nested_dict) back
+    to a regular dict.
 
     Args:
         d (defaultdict): defaultdict to convert to a regular dict.
 
     Returns:
-        dict: Regular dict with the same structure as the input defaultdict.
+        dict: Regular dict with the same multi-level structure as the input defaultdict.
     """
+    # recursively converts a nested default_dict back for regular dict
     if isinstance(d, defaultdict):
         return {k: defaultdict_to_dict(v) for k, v in d.items()}
     return d
@@ -33,6 +48,8 @@ def substring_matcher(string: str, strings_to_search: list[str]) -> str:
     Returns:
         str: Best matching string from the list.
     """
+
+    # order list of test strings based on string similarity - to get most similar string
     best_match = sorted(
         strings_to_search,
         key=lambda x: fuzz.ratio(x.lower(), string.lower()),
@@ -46,21 +63,32 @@ def quick_check_dicom(file: Path) -> bool:
     the DICM string in the first 128 bytes.
 
     Args:
-        file (Path): Path to file to check.
+        file (Path): Path of file to check nature of.
 
     Returns:
         bool: True if file is a DICOM file, False otherwise.
     """
+    # Try to check if file is DICOM
     try:
+        # opens file
         with file.open("rb") as f:
+
+            # skips first 128 bytes
             f.seek(128)
+
+            # reads next 4 bytes - return true if DICOM in nature
             if f.read(4) == b"DICM":
                 return True
+
+    # Fail silently so can employ backup DICOM check
     except:
         pass
 
+    # Check if file is DICOM using more robust, slower pydicom method
     try:
         pydicom.dcmread(file, stop_before_pixels=True)
         return True
+
+    # If file not DICOM, return False
     except:
         return False

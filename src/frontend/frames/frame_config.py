@@ -4,6 +4,8 @@ frame_config.py
 This file defines the FrameConfig tk.Frame subclass, whose purpose is to allow the user to configure AutoQC_ACR settings before running it.
 This frame is the first frame to appear within the App instance, and is swapped out to FrameTaskRunner instance once hazen tasks begin running.
 
+Written by Nathan Crossley 2025
+
 """
 
 from pathlib import Path
@@ -18,7 +20,7 @@ from shared.queueing import get_queue
 from frontend.settings import FONT_TEXT, FONT_TITLE
 from frontend.progress_bar_modal import ProgressBarModal
 
-from backend.sort_dicoms import DicomSorter
+from backend.dcm_sorter import DcmSorter
 
 
 class FrameConfig(tk.Frame):
@@ -334,7 +336,7 @@ class FrameConfig(tk.Frame):
             self.modal_progress = ProgressBarModal(self, "Checking for DICOMs")
 
             # Instantiates an instance of class for sorting DICOMs
-            ds = DicomSorter(self.in_dir)
+            ds = DcmSorter(self.in_dir)
 
             # starts running DICOM sorting process in separate thread to prevent blocking gui
             threading.Thread(target=ds.run).start()

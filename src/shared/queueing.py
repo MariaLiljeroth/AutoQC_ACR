@@ -10,6 +10,8 @@ Queue updates should be passed as tuples with (GENERIC_ID, SPECIFIC_ID, ADDITION
     and SPECIFIC_ID is a specific identifier for the nature of the update (e.g. DICOM_SORTING to indicate that the DICOM sorting process has been completed).
     and ADDITIONAL_ARGS is a placeholder for any additional args or data that needs to be passed through the queue.
 
+Written by Nathan Crossley 2025
+
 """
 
 from multiprocessing import Manager

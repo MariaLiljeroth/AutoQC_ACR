@@ -4,6 +4,8 @@ frame_task_runner.py
 This file defines the FrameTaskRunner class, which is a tk.Frame subclass that shows the progress of
 the running of hazen tasks in the backend. Is swapped in from configuration frame and is currently the final frame.
 
+Written by Nathan Crossley 2025
+
 """
 
 from pathlib import Path

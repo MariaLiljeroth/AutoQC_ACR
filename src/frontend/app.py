@@ -6,6 +6,8 @@ App inherits from tk.Tk and acts as the toplevel root window for the frame-based
 App can swap what its displaying by switching the currently displayed tk.Frame subclass.
 Frame swapping and other triggers are initiatied through the global multiprocessing queue.
 
+Written by Nathan Crossley 2025
+
 """
 
 import sys

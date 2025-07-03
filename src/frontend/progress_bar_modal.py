@@ -5,6 +5,8 @@ This script defines the ProgressBarModal class, which can be initialised to crea
 This progress bar is needed for tasks that cannot run in the background, i.e. those that must be completed
 before the user continues within the GUI (e.g. DICOM sorting).
 
+Written by Nathan Crossley 2025
+
 """
 
 import tkinter as tk
