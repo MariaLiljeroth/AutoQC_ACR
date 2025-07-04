@@ -1,7 +1,7 @@
 import os
 import imutils
-import pydicom
 from collections import defaultdict
+from pydicom import Dataset, dcmread
 
 import numpy as np
 import cv2 as cv
@@ -23,7 +23,7 @@ def get_dicom_files(folder: str, sort=False) -> list:
             for x in os.listdir(folder)
             if is_dicom_file(os.path.join(folder, x))
         ]
-        file_list.sort(key=lambda x: pydicom.dcmread(x).InstanceNumber)
+        file_list.sort(key=lambda x: dcmread(x).InstanceNumber)
     else:
         file_list = [
             os.path.join(folder, x)
@@ -56,7 +56,7 @@ def is_dicom_file(filename):
         return False
 
 
-def is_enhanced_dicom(dcm: pydicom.Dataset) -> bool:
+def is_enhanced_dicom(dcm: Dataset) -> bool:
     """
 
     Parameters
@@ -82,7 +82,7 @@ def is_enhanced_dicom(dcm: pydicom.Dataset) -> bool:
         raise Exception("Unrecognised SOPClassUID")
 
 
-def get_manufacturer(dcm: pydicom.Dataset) -> str:
+def get_manufacturer(dcm: Dataset) -> str:
     supported = ["ge", "siemens", "philips", "toshiba", "canon"]
     manufacturer = dcm.Manufacturer.lower()
     for item in supported:
@@ -92,7 +92,7 @@ def get_manufacturer(dcm: pydicom.Dataset) -> str:
     raise Exception(f"{manufacturer} not recognised manufacturer")
 
 
-def get_average(dcm: pydicom.Dataset) -> float:
+def get_average(dcm: Dataset) -> float:
     try:
         if is_enhanced_dicom(dcm):
             averages = (
@@ -108,13 +108,13 @@ def get_average(dcm: pydicom.Dataset) -> float:
     return averages
 
 
-def get_bandwidth(dcm: pydicom.Dataset) -> float:
+def get_bandwidth(dcm: Dataset) -> float:
     """
     Returns PixelBandwidth
 
     Parameters
     ----------
-    dcm: pydicom.Dataset
+    dcm: Dataset
 
     Returns
     -------
@@ -127,13 +127,13 @@ def get_bandwidth(dcm: pydicom.Dataset) -> float:
     return bandwidth
 
 
-def get_num_of_frames(dcm: pydicom.Dataset) -> int:
+def get_num_of_frames(dcm: Dataset) -> int:
     """
     Returns number of frames of dicom object
 
     Parameters
     ----------
-    dcm: pydicom.Dataset
+    dcm: Dataset
         DICOM object
 
     Returns
@@ -146,7 +146,7 @@ def get_num_of_frames(dcm: pydicom.Dataset) -> int:
         return 1
 
 
-def get_slice_thickness(dcm: pydicom.Dataset) -> float:
+def get_slice_thickness(dcm: Dataset) -> float:
     if is_enhanced_dicom(dcm):
         try:
             slice_thickness = (
@@ -168,7 +168,7 @@ def get_slice_thickness(dcm: pydicom.Dataset) -> float:
     return slice_thickness
 
 
-def get_pixel_size(dcm: pydicom.Dataset) -> tuple[float, float]:
+def get_pixel_size(dcm: Dataset) -> tuple[float, float]:
     manufacturer = get_manufacturer(dcm)
     try:
         if is_enhanced_dicom(dcm):
@@ -191,13 +191,13 @@ def get_pixel_size(dcm: pydicom.Dataset) -> tuple[float, float]:
     return dx, dy
 
 
-def get_TR(dcm: pydicom.Dataset) -> float:
+def get_TR(dcm: Dataset) -> float:
     """
     Returns Repetition Time (TR)
 
     Parameters
     ----------
-    dcm: pydicom.Dataset
+    dcm: Dataset
 
     Returns
     -------
@@ -212,13 +212,13 @@ def get_TR(dcm: pydicom.Dataset) -> float:
     return TR
 
 
-def get_rows(dcm: pydicom.Dataset) -> float:
+def get_rows(dcm: Dataset) -> float:
     """
     Returns number of image rows (rows)
 
     Parameters
     ----------
-    dcm: pydicom.Dataset
+    dcm: Dataset
 
     Returns
     -------
@@ -235,13 +235,13 @@ def get_rows(dcm: pydicom.Dataset) -> float:
     return rows
 
 
-def get_columns(dcm: pydicom.Dataset) -> float:
+def get_columns(dcm: Dataset) -> float:
     """
     Returns number of image columns (columns)
 
     Parameters
     ----------
-    dcm: pydicom.Dataset
+    dcm: Dataset
 
     Returns
     -------
@@ -257,7 +257,7 @@ def get_columns(dcm: pydicom.Dataset) -> float:
     return columns
 
 
-def get_field_of_view(dcm: pydicom.Dataset):
+def get_field_of_view(dcm: Dataset):
     # assumes square pixels
     manufacturer = get_manufacturer(dcm)
 

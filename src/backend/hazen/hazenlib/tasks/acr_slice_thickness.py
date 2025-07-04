@@ -5,11 +5,10 @@ Calculates the slice thickness from the first slice of the ACR phantom. The slic
 and two ramps placed within it. The FWHM values of each ramp are determined and the formula described in the ACR
 guidance used to calculate the slice thickness.
 
-Created by Yassine Azma
+Created by Yassine Azma (Adapted by Nathan Crossley for local RSCH purposes, 2025)
 yassine.azma@rmh.nhs.uk
-31/01/2022
 
-Adapted by Nathan Crossley for local RSCH purposes, 2025
+31/01/2022
 
 """
 
@@ -18,7 +17,7 @@ import os
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from pydicom.dataset import FileDataset
+from pydicom import Dataset
 
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
@@ -39,7 +38,7 @@ class ACRSliceThickness(HazenTask):
     """
 
     def __init__(self, **kwargs):
-        # Call constructor of HazenTask
+        # Call initialiser of HazenTask
         super().__init__(**kwargs)
 
         # Instantiate ACRObject class using dcm list passed in within kwargs
@@ -89,13 +88,13 @@ class ACRSliceThickness(HazenTask):
 
         return results
 
-    def get_slice_thickness(self, dcm: FileDataset, mask: SliceMask) -> float:
+    def get_slice_thickness(self, dcm: Dataset, mask: SliceMask) -> float:
         """Measure slice thickness of the provided dcm.
         Identify the slice thickness insert, measure the signal across two profile lines,
         measure the FWHMs and use these to calculate the slice thickness as per ACR guidance.
 
         Args:
-            dcm (pydicom.Dataset): Dcm of chosen ACR slice for slice thickness task.
+            dcm (Dataset): Dcm of chosen ACR slice for slice thickness task.
             mask (SliceMask): Corresponding mask of chosen dcm.
 
         Returns:

@@ -3,8 +3,7 @@ import numpy as np
 import skimage
 import cv2
 
-from pydicom import dcmread
-from pydicom.dataset import FileDataset
+from pydicom import dcmread, Dataset
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 
 from backend.hazen.hazenlib.utils import get_image_orientation
@@ -56,7 +55,7 @@ class ACRObject:
 
         self.kwargs = kwargs
 
-    def sort_images(self) -> tuple[list[np.ndarray], list[FileDataset]]:
+    def sort_images(self) -> tuple[list[np.ndarray], list[Dataset]]:
         """
         Sort a stack of images based on slice position.
 
@@ -64,7 +63,7 @@ class ACRObject:
         -------
         img_stack : list[np.ndarray]
             A sorted stack of images, where each image is represented as a 2D numpy array.
-        dcm_stack : list[FileDataSet]
+        dcm_stack : list[DataSet]
             A sorted stack of dicoms
         """
 

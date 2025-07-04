@@ -7,11 +7,10 @@ Calculates geometric accuracy for most uniform slice of ACR phantom. The horizon
 are calculated from the mask of the most uniform slice. Rotation matrices around the mask centre are used to determine
 diagonal lengths. The results are also visualised.
 
-Created by Yassine Azma
+Created by Yassine Azma (Adapted by Nathan Crossley for local RSCH purposes, 2025)
 yassine.azma@rmh.nhs.uk
-18/11/2022
 
-Adapted by Nathan Crossley for local RSCH purposes, 2025
+18/11/2022
 
 """
 
@@ -19,7 +18,7 @@ import os
 import numpy as np
 import cv2
 import matplotlib.patches as mpatches
-from pydicom.dataset import FileDataset
+from pydicom import Dataset
 
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
@@ -32,10 +31,10 @@ class ACRGeometricAccuracy(HazenTask):
     """
 
     def __init__(self, **kwargs):
-        # Run initialiser of HazenTask
+        # Call initialiser of HazenTask
         super().__init__(**kwargs)
 
-        # Instantiate ACRObject class.
+        # Instantiate ACRObject class using dcm list passed in within kwargs.
         self.ACR_obj = ACRObject(self.dcm_list)
 
     def run(self) -> dict:
@@ -88,13 +87,13 @@ class ACRGeometricAccuracy(HazenTask):
 
         return results
 
-    def get_geometric_accuracy(self, dcm: FileDataset, mask: SliceMask) -> tuple[float]:
+    def get_geometric_accuracy(self, dcm: Dataset, mask: SliceMask) -> tuple[float]:
         """Measure geometric accuracy for chosen dcm. This is achieved
         through obtaining an on-axis bounding box for on-axis and rotated
         versions of the mask of the dcm.
 
         Args:
-            dcm (FileDataset): dcm chosen for geometric accuracy task.
+            dcm (Dataset): Dcm chosen for geometric accuracy task.
             mask (SliceMask): Mask corresponding to chosen dcm.
 
         Returns:

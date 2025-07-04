@@ -59,12 +59,13 @@ import matplotlib.gridspec as gridspec
 import math
 from enum import Enum
 
+
 class ResOptions(Enum):
-    DotMatrixMethod=1
-    MTFMethod=2
-    ContrastResponseMethod=3
-    Manual=4
-    
+    DotMatrixMethod = 1
+    MTFMethod = 2
+    ContrastResponseMethod = 3
+    Manual = 4
+
 
 class ACRSpatialResolution(HazenTask):
     """Spatial resolution measurement class for DICOM images of the ACR phantom
@@ -74,16 +75,16 @@ class ACRSpatialResolution(HazenTask):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ACR_obj = ACRObject(self.dcm_list,kwargs)
+        self.ACR_obj = ACRObject(self.dcm_list, kwargs)
         self.ResOption = ResOptions.MTFMethod
-    
+
     def GetROICrops(self):
-        ResSquare,CropsLoc,ROIS = self.GetResSquares(self.ACR_obj.dcms[0])
-        ROI_Plots= {
+        ResSquare, CropsLoc, ROIS = self.GetResSquares(self.ACR_obj.dcms[0])
+        ROI_Plots = {
             "1.1mm holes": ROIS[0],
             "1.0mm holes": ROIS[1],
             "0.9mm holes": ROIS[2],
-            "0.8mm holes": ROIS[3]
+            "0.8mm holes": ROIS[3],
         }
         return ROI_Plots
 
@@ -95,7 +96,7 @@ class ACRSpatialResolution(HazenTask):
             dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
         """
         rot_ang = self.ACR_obj.rot_angle
-        if np.abs(rot_ang) < 3 and self.ResOption==ResOptions.MTFMethod:
+        if np.abs(rot_ang) < 3 and self.ResOption == ResOptions.MTFMethod:
             logger.warning(
                 f"The estimated rotation angle of the ACR phantom is {np.round(rot_ang, 3)} degrees, which "
                 f"is less than the recommended 3 degrees. Results will be unreliable!"
@@ -109,7 +110,7 @@ class ACRSpatialResolution(HazenTask):
         results["file"] = self.img_desc(mtf_dcm)
 
         try:
-            if (self.ResOption==ResOptions.DotMatrixMethod):
+            if self.ResOption == ResOptions.DotMatrixMethod:
                 res = self.get_dotpairs(mtf_dcm)
                 results["measurement"] = {
                     "1.1mm holes": res[0],
@@ -117,27 +118,29 @@ class ACRSpatialResolution(HazenTask):
                     "0.9mm holes": res[2],
                     "0.8mm holes": res[3],
                 }
-            elif(self.ResOption==ResOptions.MTFMethod):
+            elif self.ResOption == ResOptions.MTFMethod:
                 raw_res, fitted_res = self.get_mtf50(mtf_dcm)
                 results["measurement"] = {
                     "estimated rotation angle": round(rot_ang, 2),
                     "raw mtf50": round(raw_res, 2),
                     "fitted mtf50": round(fitted_res, 2),
                 }
-            elif(self.ResOption==ResOptions.ContrastResponseMethod):
-                HorContrastResponse, VertContrastResponse = self.get_ContrastResponse(mtf_dcm)
+            elif self.ResOption == ResOptions.ContrastResponseMethod:
+                HorContrastResponse, VertContrastResponse = self.get_ContrastResponse(
+                    mtf_dcm
+                )
                 results["measurement"] = {
-                    "1.1mm holes Horizontal": round(HorContrastResponse[0]*100.0,2),
-                    "1.1mm holes Vertical": round(VertContrastResponse[0]*100.0,2),
-                    "1.0mm holes Horizontal": round(HorContrastResponse[1]*100.0,2),
-                    "1.0mm holes Vertical": round(VertContrastResponse[1]*100.0,2),
-                    "0.9mm holes Horizontal": round(HorContrastResponse[2]*100.0,2),
-                    "0.9mm holes Vertical": round(VertContrastResponse[2]*100.0,2),
-                    "0.8mm holes Horizontal": round(HorContrastResponse[3]*100.0,2),
-                    "0.8mm holes Vertical": round(VertContrastResponse[3]*100.0,2)
+                    "1.1mm holes Horizontal": round(HorContrastResponse[0] * 100.0, 2),
+                    "1.1mm holes Vertical": round(VertContrastResponse[0] * 100.0, 2),
+                    "1.0mm holes Horizontal": round(HorContrastResponse[1] * 100.0, 2),
+                    "1.0mm holes Vertical": round(VertContrastResponse[1] * 100.0, 2),
+                    "0.9mm holes Horizontal": round(HorContrastResponse[2] * 100.0, 2),
+                    "0.9mm holes Vertical": round(VertContrastResponse[2] * 100.0, 2),
+                    "0.8mm holes Horizontal": round(HorContrastResponse[3] * 100.0, 2),
+                    "0.8mm holes Vertical": round(VertContrastResponse[3] * 100.0, 2),
                 }
-                
-            elif(self.ResOption==ResOptions.Manual):
+
+            elif self.ResOption == ResOptions.Manual:
                 pass
             else:
                 raise Exception("Unexpected option in spatial res module.")
@@ -203,10 +206,12 @@ class ACRSpatialResolution(HazenTask):
         Returns:
             np.ndarray: subset of a pixel array with given width
         """
-        crop_x, crop_y = np.int0((x - width // 2, x + width // 2)), np.int0((
-            y - width // 2,
-            y + width // 2,
-        ))
+        crop_x, crop_y = np.int0((x - width // 2, x + width // 2)), np.int0(
+            (
+                y - width // 2,
+                y + width // 2,
+            )
+        )
         crop_img = img[crop_y[0] : crop_y[1], crop_x[0] : crop_x[1]]
 
         return crop_img
@@ -488,22 +493,23 @@ class ACRSpatialResolution(HazenTask):
         """_summary_
 
         Args:
-            dcm (pydicom.Dataset): DICOM image object
+            dcm (Dataset): DICOM image object
 
         Returns:
             tuple: _description_
         """
         img = dcm.pixel_array
-        if 'PixelSpacing' in dcm:
+        if "PixelSpacing" in dcm:
             res = dcm.PixelSpacing  # In-plane resolution from metadata
         else:
             import hazenlib.utils
-            res = hazenlib.utils.GetDicomTag(dcm,(0x28,0x30))
+
+            res = hazenlib.utils.GetDicomTag(dcm, (0x28, 0x30))
         cxy = self.ACR_obj.centre
 
         ramp_x = int(cxy[0])
         ramp_y = self.y_position_for_ramp(res, img, cxy)
-        
+
         width = int(13 * img.shape[0] / 256)
         crop_img = self.crop_image(img, ramp_x, ramp_y, width)
         edge_type, direction = self.get_edge_type(crop_img)
@@ -536,7 +542,7 @@ class ACRSpatialResolution(HazenTask):
                 facecolor="none",
             )
             axes[0].add_patch(rect)
-            #axes[0].axis("off")
+            # axes[0].axis("off")
             axes[0].set_title("Segmented Edge")
 
             axes[1].imshow(crop_img)
@@ -552,9 +558,7 @@ class ACRSpatialResolution(HazenTask):
                     np.arange(0, width - 1),
                     color="r",
                 )
-            
 
-        
             axes[1].axis("off")
             axes[1].set_title("Cropped Edge", fontsize=14)
 
@@ -604,93 +608,111 @@ class ACRSpatialResolution(HazenTask):
 
         return eff_raw_res, eff_fit_res
 
-
-    #Function to extract the squares we are interested in
-    def GetResSquares(self,dcm):
+    # Function to extract the squares we are interested in
+    def GetResSquares(self, dcm):
         PixelArray = dcm.pixel_array
-        if 'PixelSpacing' in dcm:
+        if "PixelSpacing" in dcm:
             res = dcm.PixelSpacing  # In-plane resolution from metadata
         else:
             import hazenlib.utils
-            res = hazenlib.utils.GetDicomTag(dcm,(0x28,0x30))
-        
+
+            res = hazenlib.utils.GetDicomTag(dcm, (0x28, 0x30))
+
         Centre = self.ACR_obj.centre
         radius = self.ACR_obj.radius
-        BottomPoint = [Centre[0],Centre[1]+radius]
-        leftCorner = [ BottomPoint[0] -int(round(57/res[0],0)),
-                       BottomPoint[1] -int(round(26/res[1],0))]
+        BottomPoint = [Centre[0], Centre[1] + radius]
+        leftCorner = [
+            BottomPoint[0] - int(round(57 / res[0], 0)),
+            BottomPoint[1] - int(round(26 / res[1], 0)),
+        ]
 
-        #Crop the ROI we need
-        ROISize = [int(round(114/res[0],0)),int(round(37/res[1],0))]
-        Crop = PixelArray[leftCorner[1]-ROISize[1]:leftCorner[1],leftCorner[0]:leftCorner[0]+ROISize[0]]
-        Binary_Crop = Crop > np.max(Crop)*0.1
+        # Crop the ROI we need
+        ROISize = [int(round(114 / res[0], 0)), int(round(37 / res[1], 0))]
+        Crop = PixelArray[
+            leftCorner[1] - ROISize[1] : leftCorner[1],
+            leftCorner[0] : leftCorner[0] + ROISize[0],
+        ]
+        Binary_Crop = Crop > np.max(Crop) * 0.1
 
-        #This line gets rid of anything touching the border edge, super handy!
-        Binary_Crop=skimage.segmentation.clear_border(Binary_Crop)
-        #Close any gaps within the footprint
-        Binary_Crop=skimage.morphology.binary_closing(Binary_Crop,skimage.morphology.square(3))
+        # This line gets rid of anything touching the border edge, super handy!
+        Binary_Crop = skimage.segmentation.clear_border(Binary_Crop)
+        # Close any gaps within the footprint
+        Binary_Crop = skimage.morphology.binary_closing(
+            Binary_Crop, skimage.morphology.square(3)
+        )
         label_image = skimage.morphology.label(Binary_Crop)
 
-        ResSquares=[]
-        Xpos=[]
+        ResSquares = []
+        Xpos = []
         CropsBB = []
-        ROIS=[]
+        ROIS = []
 
         regions = skimage.measure.regionprops(label_image)
         for region in regions[:]:
             if region.area >= 40:
                 minr, minc, maxr, maxc = region.bbox
-                #maxr+=1
-                #maxc+=1
-                #minc-=1
+                # maxr+=1
+                # maxc+=1
+                # minc-=1
                 bx = (minc, maxc, maxc, minc, minc)
                 by = (minr, minr, maxr, maxr, minr)
-                #[0.976599991322, 0.976599991322]
+                # [0.976599991322, 0.976599991322]
                 plt.plot(bx, by, linewidth=0.5)
-                plt.plot([region.centroid[1]],[region.centroid[0]], marker="x",linestyle="")
+                plt.plot(
+                    [region.centroid[1]], [region.centroid[0]], marker="x", linestyle=""
+                )
 
-                ROI = Crop[minr:maxr,minc:maxc]
+                ROI = Crop[minr:maxr, minc:maxc]
                 ResSquares.append(ROI)
                 Xpos.append(region.centroid[1])
-                CropsBB.append([minr+leftCorner[1]-ROISize[1], maxr+leftCorner[1]-ROISize[1], minc+leftCorner[0], maxc+leftCorner[0]])
-                ROIS.append(ROI)           
-        #plt.imshow(Crop)
-        #plt.savefig("test.png", dpi=300)
-        #plt.close("all")
+                CropsBB.append(
+                    [
+                        minr + leftCorner[1] - ROISize[1],
+                        maxr + leftCorner[1] - ROISize[1],
+                        minc + leftCorner[0],
+                        maxc + leftCorner[0],
+                    ]
+                )
+                ROIS.append(ROI)
+        # plt.imshow(Crop)
+        # plt.savefig("test.png", dpi=300)
+        # plt.close("all")
 
-        #take the 4 most right objects, ignoring anything after that. If the blocks on the left get seperated then this can cause issues which is solved by this appraoch.
+        # take the 4 most right objects, ignoring anything after that. If the blocks on the left get seperated then this can cause issues which is solved by this appraoch.
         OrderedXpos = sorted(Xpos, reverse=True)
-        OrderedXIdx= []
+        OrderedXIdx = []
         for x in OrderedXpos:
             OrderedXIdx.append(Xpos.index(x))
         IndexsToRemove = OrderedXIdx[4:]
 
         for idx in IndexsToRemove:
-            ResSquares[idx]=None
-            CropsBB[idx]=None
-            ROIS[idx]=None
+            ResSquares[idx] = None
+            CropsBB[idx] = None
+            ROIS[idx] = None
 
-        ResSquares=[x for x in ResSquares if x is not None]
-        CropsBB=[x for x in CropsBB if x is not None]
-        ROIS=[x for x in ROIS if x is not None]
-        
-        if (len(ROIS)!=4):
-            raise Exception("Error: The number of found resolution square does not equal exactly 4.")
+        ResSquares = [x for x in ResSquares if x is not None]
+        CropsBB = [x for x in CropsBB if x is not None]
+        ROIS = [x for x in ROIS if x is not None]
 
-        return ResSquares,CropsBB,ROIS
+        if len(ROIS) != 4:
+            raise Exception(
+                "Error: The number of found resolution square does not equal exactly 4."
+            )
 
-    def get_dotpairs(self,dcm):
-        ResSquare,CropsLoc,ROIS = self.GetResSquares(dcm)
+        return ResSquares, CropsBB, ROIS
+
+    def get_dotpairs(self, dcm):
+        ResSquare, CropsLoc, ROIS = self.GetResSquares(dcm)
         import matplotlib.pyplot as plt
+
         plt.imshow(ROIS[0])
         plt.savefig("test.png")
 
-
         Results = []
         for square in ResSquare:
-            var = round(cv2.Laplacian(square, cv2.CV_64F).var(),2)
+            var = round(cv2.Laplacian(square, cv2.CV_64F).var(), 2)
             Results.append(var)
-        
+
         if self.report:
             import matplotlib.pyplot as plt
             import matplotlib.patches as patches
@@ -700,190 +722,239 @@ class ACRSpatialResolution(HazenTask):
             fig.set_size_inches(8, 40)
             fig.tight_layout(pad=4)
 
-            axes[0].imshow(img, interpolation="none",vmin=0,vmax=np.max(img))
+            axes[0].imshow(img, interpolation="none", vmin=0, vmax=np.max(img))
             axes[0].set_title("Phantom Image")
-            colors = ["blue","orange","green","red"]
-            Titles = ["1.1 mm holes","1.0 mm holes","0.9 mm holes","0.8 mm holes"]
-            for i in range(0,len(CropsLoc)):
+            colors = ["blue", "orange", "green", "red"]
+            Titles = ["1.1 mm holes", "1.0 mm holes", "0.9 mm holes", "0.8 mm holes"]
+            for i in range(0, len(CropsLoc)):
                 minr = CropsLoc[i][0]
                 maxr = CropsLoc[i][1]
                 minc = CropsLoc[i][2]
                 maxc = CropsLoc[i][3]
                 bx = (minc, maxc, maxc, minc, minc)
                 by = (minr, minr, maxr, maxr, minr)
-                axes[0].plot(bx, by,color=colors[i], linewidth=2.5)
+                axes[0].plot(bx, by, color=colors[i], linewidth=2.5)
 
-                axes[i+1].imshow(ROIS[i],vmin=0,vmax=np.max(img))
-                axes[i+1].set_title(Titles[i] + " Res Score: " + str("{:0.3e}".format(Results[i])))
-                for axis in ['top','bottom','left','right']:
-                    axes[i+1].spines[axis].set_linewidth(6)
-                    axes[i+1].spines[axis].set_color(colors[i])
+                axes[i + 1].imshow(ROIS[i], vmin=0, vmax=np.max(img))
+                axes[i + 1].set_title(
+                    Titles[i] + " Res Score: " + str("{:0.3e}".format(Results[i]))
+                )
+                for axis in ["top", "bottom", "left", "right"]:
+                    axes[i + 1].spines[axis].set_linewidth(6)
+                    axes[i + 1].spines[axis].set_color(colors[i])
 
             img_path = os.path.realpath(
-            os.path.join(self.report_path, f"{self.img_desc(dcm)}_DotPairs.png"))
+                os.path.join(self.report_path, f"{self.img_desc(dcm)}_DotPairs.png")
+            )
             fig.savefig(img_path)
             self.report_files.append(img_path)
 
         return Results
-    
 
-    def get_ContrastResponse(self,dcm):
-        def GetContrastResponseFactor(Lines,PixelSteps,CurrentHole):
+    def get_ContrastResponse(self, dcm):
+        def GetContrastResponseFactor(Lines, PixelSteps, CurrentHole):
             if PixelSteps >= 1:
-                Peaks, PeakProperties = scipy.signal.find_peaks(Lines,distance=PixelSteps,height=(np.max(Lines)+np.min(Lines))/2.0)
-                Troughs, TroughsProperties = scipy.signal.find_peaks(-Lines,distance=PixelSteps,height=-(np.max(Lines)+np.min(Lines))/2.0)
+                Peaks, PeakProperties = scipy.signal.find_peaks(
+                    Lines,
+                    distance=PixelSteps,
+                    height=(np.max(Lines) + np.min(Lines)) / 2.0,
+                )
+                Troughs, TroughsProperties = scipy.signal.find_peaks(
+                    -Lines,
+                    distance=PixelSteps,
+                    height=-(np.max(Lines) + np.min(Lines)) / 2.0,
+                )
             else:
-                Peaks, PeakProperties = scipy.signal.find_peaks(Lines,height=(np.max(Lines)+np.min(Lines))/2.0)
-                Troughs, TroughsProperties = scipy.signal.find_peaks(-Lines,height=-(np.max(Lines)+np.min(Lines))/2.0)  
+                Peaks, PeakProperties = scipy.signal.find_peaks(
+                    Lines, height=(np.max(Lines) + np.min(Lines)) / 2.0
+                )
+                Troughs, TroughsProperties = scipy.signal.find_peaks(
+                    -Lines, height=-(np.max(Lines) + np.min(Lines)) / 2.0
+                )
 
             x_values = np.arange(len(Lines))
             y_interp = scipy.interpolate.interp1d(x_values, Lines)
-            PeaksandTroughs = list(Peaks)+list(Troughs)        
+            PeaksandTroughs = list(Peaks) + list(Troughs)
 
-            #print((np.max(Lines)+np.min(Lines))/2.0)
-            #print(Lines)
-            #plt.close("all")
-            #plt.plot(Lines)
-            #plt.plot(Lines[Peaks])
-            #plt.savefig("test.png")
+            # print((np.max(Lines)+np.min(Lines))/2.0)
+            # print(Lines)
+            # plt.close("all")
+            # plt.plot(Lines)
+            # plt.plot(Lines[Peaks])
+            # plt.savefig("test.png")
 
-            
             def Sin(x, phase):
-                return np.sin(2*np.pi*x * 1/(PixelSteps*2) + phase) * np.max(Lines)/2 + np.mean(Lines)
-            p0=[0]
-            if len(PeaksandTroughs) >0:
+                return np.sin(2 * np.pi * x * 1 / (PixelSteps * 2) + phase) * np.max(
+                    Lines
+                ) / 2 + np.mean(Lines)
+
+            p0 = [0]
+            if len(PeaksandTroughs) > 0:
                 fit = curve_fit(Sin, PeaksandTroughs, Lines[PeaksandTroughs], p0=p0)
             else:
-                fit = curve_fit(Sin, x_values, Lines, p0=p0) # if we find no peaks/troughs just go ahead and fit to the whole line 
-            x=np.arange(0,img.shape[1],0.0001)
-            data_fit = Sin(x,*fit[0])
+                fit = curve_fit(
+                    Sin, x_values, Lines, p0=p0
+                )  # if we find no peaks/troughs just go ahead and fit to the whole line
+            x = np.arange(0, img.shape[1], 0.0001)
+            data_fit = Sin(x, *fit[0])
 
-            PreicatedPeaks=[]
-            PreicatedTroughs=[]
+            PreicatedPeaks = []
+            PreicatedTroughs = []
 
-            #Based on the sin wave get the predicted peaks and troughs
-            i=0
-            while(len(PreicatedPeaks)<4):
-                Prediction = ((np.pi/2+i*2*np.pi) - fit[0][0] )/(2*np.pi*(1/(PixelSteps*2)))
-                if Prediction >=0 and Prediction < max(x_values):
+            # Based on the sin wave get the predicted peaks and troughs
+            i = 0
+            while len(PreicatedPeaks) < 4:
+                Prediction = ((np.pi / 2 + i * 2 * np.pi) - fit[0][0]) / (
+                    2 * np.pi * (1 / (PixelSteps * 2))
+                )
+                if Prediction >= 0 and Prediction < max(x_values):
                     PreicatedPeaks.append(Prediction)
                 if Prediction > max(x_values):
                     PreicatedPeaks.append(max(x_values))
-                i+=1
+                i += 1
 
-            i=0
-            while(len(PreicatedTroughs)<4):
-                Prediction = ((3*np.pi/2+i*2*np.pi) - fit[0][0] )/(2*np.pi*(1/(PixelSteps*2)))
-                if Prediction >=0 and Prediction < max(x_values):
+            i = 0
+            while len(PreicatedTroughs) < 4:
+                Prediction = ((3 * np.pi / 2 + i * 2 * np.pi) - fit[0][0]) / (
+                    2 * np.pi * (1 / (PixelSteps * 2))
+                )
+                if Prediction >= 0 and Prediction < max(x_values):
                     PreicatedTroughs.append(Prediction)
                 if Prediction > max(x_values):
                     PreicatedTroughs.append(max(x_values))
-                i+=1
+                i += 1
 
-            #Organise the peaks to check for any gaps or false peaks
-            PeakOrgArray = [None,None,None,None]
-            PeakDistancesFromPrediction = [None,None,None,None]
+            # Organise the peaks to check for any gaps or false peaks
+            PeakOrgArray = [None, None, None, None]
+            PeakDistancesFromPrediction = [None, None, None, None]
             for peak in Peaks:
-                diff = np.abs(np.array(PreicatedPeaks)-peak)
+                diff = np.abs(np.array(PreicatedPeaks) - peak)
                 Idx = np.argmin(diff)
-                if PeakOrgArray[Idx]==None:
+                if PeakOrgArray[Idx] == None:
                     PeakOrgArray[Idx] = peak
                     PeakDistancesFromPrediction[Idx] = diff[Idx]
                 else:
-                    if diff[Idx] < PeakDistancesFromPrediction[Idx]: #If two peaks get slotted into the same region then take the one that best matches the expected position. 
+                    if (
+                        diff[Idx] < PeakDistancesFromPrediction[Idx]
+                    ):  # If two peaks get slotted into the same region then take the one that best matches the expected position.
                         PeakOrgArray[Idx] = peak
                         PeakDistancesFromPrediction[Idx] = diff[Idx]
 
-            FinalPeaks = [None,None,None,None]
-            for OrgIdx in range(0,len(PeakOrgArray)):
-                if PeakOrgArray[OrgIdx]!=None:
+            FinalPeaks = [None, None, None, None]
+            for OrgIdx in range(0, len(PeakOrgArray)):
+                if PeakOrgArray[OrgIdx] != None:
                     FinalPeaks[OrgIdx] = PeakOrgArray[OrgIdx]
                 else:
-                    print("Warning: Peak number " + str(OrgIdx+1) +" is predicted in hole size " +str(CurrentHole) +" mm")
+                    print(
+                        "Warning: Peak number "
+                        + str(OrgIdx + 1)
+                        + " is predicted in hole size "
+                        + str(CurrentHole)
+                        + " mm"
+                    )
                     FinalPeaks[OrgIdx] = PreicatedPeaks[OrgIdx]
 
-            #Maybe this should be treated the same way as above but al leave it as it is for now
-            TroughOrgArray = [None,None,None]
+            # Maybe this should be treated the same way as above but al leave it as it is for now
+            TroughOrgArray = [None, None, None]
             for trough in Troughs:
                 for I in range(3):
-                    if trough >= FinalPeaks[I] and trough < FinalPeaks[I+1]:
+                    if trough >= FinalPeaks[I] and trough < FinalPeaks[I + 1]:
                         TroughOrgArray[I] = trough
-            
-            FinalTroughs=[None,None,None]
-            for OrgIdx in range(0,len(FinalTroughs)):
-                if TroughOrgArray[OrgIdx]!=None:
+
+            FinalTroughs = [None, None, None]
+            for OrgIdx in range(0, len(FinalTroughs)):
+                if TroughOrgArray[OrgIdx] != None:
                     FinalTroughs[OrgIdx] = TroughOrgArray[OrgIdx]
                 else:
-                    print("Warning: Trough number " + str(OrgIdx+1) +" is predicted in hole size " +str(CurrentHole) +" mm")
+                    print(
+                        "Warning: Trough number "
+                        + str(OrgIdx + 1)
+                        + " is predicted in hole size "
+                        + str(CurrentHole)
+                        + " mm"
+                    )
                     FinalTroughs[OrgIdx] = PreicatedTroughs[OrgIdx]
 
             PeaksTroughsX = []
-            PeaksTroughsY=[]
+            PeaksTroughsY = []
             MeanPeak = 0
             for peak in FinalPeaks:
-                MeanPeak+=y_interp(peak)
+                MeanPeak += y_interp(peak)
                 PeaksTroughsX.append(peak)
                 PeaksTroughsY.append(y_interp(peak))
-            MeanPeak/=4
+            MeanPeak /= 4
 
-            MeanTrough=0
+            MeanTrough = 0
             for Troughs in FinalTroughs:
-                MeanTrough+=y_interp(Troughs)
+                MeanTrough += y_interp(Troughs)
                 PeaksTroughsX.append(Troughs)
                 PeaksTroughsY.append(y_interp(Troughs))
 
-            MeanTrough/=3
-            Amplitude = MeanPeak-MeanTrough
+            MeanTrough /= 3
+            Amplitude = MeanPeak - MeanTrough
 
-            #plt.close("all")
-            #plt.plot(Lines)
-            #plt.axvline(FinalPeaks[0],color="r")
-            #plt.axvline(FinalPeaks[1],color="r")
-            #plt.axvline(FinalPeaks[2],color="r")
-            #plt.axvline(FinalPeaks[3],color="r")
-            #plt.axhline(MeanPeak,color="r")
-            #plt.axvline(FinalTroughs[0],color="y")
-            #plt.axvline(FinalTroughs[1],color="y")
-            #plt.axvline(FinalTroughs[2],color="y")
-            #plt.axhline(MeanTrough,color="y")
-            #plt.savefig("test.png")
-            
+            # plt.close("all")
+            # plt.plot(Lines)
+            # plt.axvline(FinalPeaks[0],color="r")
+            # plt.axvline(FinalPeaks[1],color="r")
+            # plt.axvline(FinalPeaks[2],color="r")
+            # plt.axvline(FinalPeaks[3],color="r")
+            # plt.axhline(MeanPeak,color="r")
+            # plt.axvline(FinalTroughs[0],color="y")
+            # plt.axvline(FinalTroughs[1],color="y")
+            # plt.axvline(FinalTroughs[2],color="y")
+            # plt.axhline(MeanTrough,color="y")
+            # plt.savefig("test.png")
 
-            return Amplitude/MeanPeak,MeanPeak,MeanTrough,PeaksTroughsX,PeaksTroughsY
+            return (
+                Amplitude / MeanPeak,
+                MeanPeak,
+                MeanTrough,
+                PeaksTroughsX,
+                PeaksTroughsY,
+            )
 
-        def ExtractLines(Rect,points,values,img):
-            Vertical=False
+        def ExtractLines(Rect, points, values, img):
+            Vertical = False
             if Rect.get_width() < Rect.get_height():
-                Vertical=True
+                Vertical = True
 
-            StepSize = Rect.get_height()/5.0
-            Lines=np.zeros(img.shape[1])
-            if Vertical==True:
-                StepSize = Rect.get_width()/5.0
-                Lines=np.zeros(img.shape[0])
+            StepSize = Rect.get_height() / 5.0
+            Lines = np.zeros(img.shape[1])
+            if Vertical == True:
+                StepSize = Rect.get_width() / 5.0
+                Lines = np.zeros(img.shape[0])
 
-            #plt.close("all")
-            #fig, (ax1, ax2) = plt.subplots(1, 2)
-            #ax1.imshow(img)
-            #ax1.add_patch(rect)
-            
-            for i in range(1,5):
-                if Vertical==False:
-                    xvalues=np.linspace(0,img.shape[1]-1,img.shape[1],endpoint=True)
-                    xvalues=np.linspace(0,rect.get_width(),img.shape[1],endpoint=True)
-                    yvalues=[rect.get_y()+i*StepSize]*len(xvalues)
-                    Line = griddata(points, values, (yvalues, xvalues), method='linear')
-                    Lines+=Line
-                    #ax1.axhline(yvalues[0])
+            # plt.close("all")
+            # fig, (ax1, ax2) = plt.subplots(1, 2)
+            # ax1.imshow(img)
+            # ax1.add_patch(rect)
+
+            for i in range(1, 5):
+                if Vertical == False:
+                    xvalues = np.linspace(
+                        0, img.shape[1] - 1, img.shape[1], endpoint=True
+                    )
+                    xvalues = np.linspace(
+                        0, rect.get_width(), img.shape[1], endpoint=True
+                    )
+                    yvalues = [rect.get_y() + i * StepSize] * len(xvalues)
+                    Line = griddata(points, values, (yvalues, xvalues), method="linear")
+                    Lines += Line
+                    # ax1.axhline(yvalues[0])
                 else:
-                    yvalues=np.linspace(0,img.shape[0]-1,img.shape[0],endpoint=True)
-                    xvalues=np.linspace(0,rect.get_height(),img.shape[0],endpoint=True)
-                    xvalues=[rect.get_x()+i*StepSize]*len(yvalues)
-                    #ax1.axvline(xvalues[0])
-                    Line = griddata(points, values, (yvalues, xvalues), method='linear')
+                    yvalues = np.linspace(
+                        0, img.shape[0] - 1, img.shape[0], endpoint=True
+                    )
+                    xvalues = np.linspace(
+                        0, rect.get_height(), img.shape[0], endpoint=True
+                    )
+                    xvalues = [rect.get_x() + i * StepSize] * len(yvalues)
+                    # ax1.axvline(xvalues[0])
+                    Line = griddata(points, values, (yvalues, xvalues), method="linear")
                     Line = Line[::-1]
-                    Lines+=Line
-            '''
+                    Lines += Line
+            """
             if Vertical==False:
                 xvalues=np.linspace(0,img.shape[1]-1,img.shape[1],endpoint=True)
                 xvalues=np.linspace(0,rect.get_width(),img.shape[1],endpoint=True)
@@ -899,169 +970,307 @@ class ACRSpatialResolution(HazenTask):
                 Line = griddata(points, values, (yvalues, xvalues), method='linear')
                 Line = Line[::-1]
                 Lines+=Line
-            '''
-            #ax2.plot(Lines)
-            #plt.savefig("test.png")
-            return Lines/4.0
-            
+            """
+            # ax2.plot(Lines)
+            # plt.savefig("test.png")
+            return Lines / 4.0
 
         def GetCutOffs(img):
             Thresh = 0
             for i in range(img.shape[1]):
-                Thresh+=np.mean(img[:,i])
+                Thresh += np.mean(img[:, i])
             Thresh /= img.shape[1]
-            
-            BinaryImage = img>=Thresh
-            
+
+            BinaryImage = img >= Thresh
+
             num = 0
-            count =0
+            count = 0
             maxcount = 100
             while num != 3:
-                BinaryImage=skimage.morphology.binary_dilation(BinaryImage)
-                label_image,num = skimage.morphology.label(BinaryImage+1,return_num=True,connectivity=2)
-                count+=1
-                #print(num)
-                if count >=maxcount:
-                    raise Exception("Unable to find 3 regions in binary image, try the manual option")
-            for i in range(0,count):
-                BinaryImage=skimage.morphology.binary_erosion(BinaryImage)
+                BinaryImage = skimage.morphology.binary_dilation(BinaryImage)
+                label_image, num = skimage.morphology.label(
+                    BinaryImage + 1, return_num=True, connectivity=2
+                )
+                count += 1
+                # print(num)
+                if count >= maxcount:
+                    raise Exception(
+                        "Unable to find 3 regions in binary image, try the manual option"
+                    )
+            for i in range(0, count):
+                BinaryImage = skimage.morphology.binary_erosion(BinaryImage)
 
-            Quarters = [int(round(img.shape[0]/4,0)),int(round(img.shape[1]/4,0))]
-            UpperRect = [0,0,None,None]
-            LowerRect = [None,None,img.shape[0]-Quarters[0],img.shape[1]-Quarters[1]]
+            Quarters = [
+                int(round(img.shape[0] / 4, 0)),
+                int(round(img.shape[1] / 4, 0)),
+            ]
+            UpperRect = [0, 0, None, None]
+            LowerRect = [
+                None,
+                None,
+                img.shape[0] - Quarters[0],
+                img.shape[1] - Quarters[1],
+            ]
 
-            UpperRect[2] = np.where(BinaryImage[0:Quarters[0],:]==1)[1].max()
-            UpperRect[3] = np.where(BinaryImage[:,0:Quarters[1]]==1)[0].max()
-            
-            LowerRect[1] = np.where(BinaryImage[:,img.shape[1]-Quarters[1]:img.shape[1]]==1)[0].min()
-            LowerRect[0] = np.where(BinaryImage[img.shape[0]-Quarters[0]:img.shape[0],:]==1)[1].min()
+            UpperRect[2] = np.where(BinaryImage[0 : Quarters[0], :] == 1)[1].max()
+            UpperRect[3] = np.where(BinaryImage[:, 0 : Quarters[1]] == 1)[0].max()
 
-            LowerRect[2] = img.shape[1]-LowerRect[0]-1
-            LowerRect[3] = img.shape[0]-LowerRect[1]-1
+            LowerRect[1] = np.where(
+                BinaryImage[:, img.shape[1] - Quarters[1] : img.shape[1]] == 1
+            )[0].min()
+            LowerRect[0] = np.where(
+                BinaryImage[img.shape[0] - Quarters[0] : img.shape[0], :] == 1
+            )[1].min()
 
-            rectUpper = patches.Rectangle((UpperRect[0], UpperRect[1]), UpperRect[2], UpperRect[3], linewidth=1, edgecolor="red", facecolor='none', linestyle="-")
-            rectLower = patches.Rectangle((LowerRect[0], LowerRect[1]), LowerRect[2], LowerRect[3], linewidth=1, edgecolor="blue", facecolor='none', linestyle="-")
-            
-            #plt.close("all")
-            #plt.imshow(img)
-            #plt.imshow(BinaryImage,alpha=0.5)
-            #plt.gca().add_patch(rectUpper)
-            #plt.gca().add_patch(rectLower)
-            #plt.savefig("test.png")
-    
-            return rectUpper,rectLower
+            LowerRect[2] = img.shape[1] - LowerRect[0] - 1
+            LowerRect[3] = img.shape[0] - LowerRect[1] - 1
+
+            rectUpper = patches.Rectangle(
+                (UpperRect[0], UpperRect[1]),
+                UpperRect[2],
+                UpperRect[3],
+                linewidth=1,
+                edgecolor="red",
+                facecolor="none",
+                linestyle="-",
+            )
+            rectLower = patches.Rectangle(
+                (LowerRect[0], LowerRect[1]),
+                LowerRect[2],
+                LowerRect[3],
+                linewidth=1,
+                edgecolor="blue",
+                facecolor="none",
+                linestyle="-",
+            )
+
+            # plt.close("all")
+            # plt.imshow(img)
+            # plt.imshow(BinaryImage,alpha=0.5)
+            # plt.gca().add_patch(rectUpper)
+            # plt.gca().add_patch(rectLower)
+            # plt.savefig("test.png")
+
+            return rectUpper, rectLower
 
         Crops = self.GetROICrops()
-        imgs = [Crops["1.1mm holes"],Crops["1.0mm holes"],Crops["0.9mm holes"],Crops["0.8mm holes"]]
-        HoleSize = [1.1,1.0,0.9,0.8]
+        imgs = [
+            Crops["1.1mm holes"],
+            Crops["1.0mm holes"],
+            Crops["0.9mm holes"],
+            Crops["0.8mm holes"],
+        ]
+        HoleSize = [1.1, 1.0, 0.9, 0.8]
 
         if self.report:
             fig = plt.figure(figsize=(15, 10))
-            gs = gridspec.GridSpec(nrows=4, ncols=4,height_ratios=[3, 1,1,1])
-            gridspec_kw={'width_ratios': [1, 3]}
+            gs = gridspec.GridSpec(nrows=4, ncols=4, height_ratios=[3, 1, 1, 1])
+            gridspec_kw = {"width_ratios": [1, 3]}
 
+        ContrastResponsesHorAllRes = []
+        ContrastResponsesVertAllRes = []
+        ProcessedSizes = []
+        LineTest = []
 
-        ContrastResponsesHorAllRes=[]
-        ContrastResponsesVertAllRes=[]
-        ProcessedSizes=[]
-        LineTest=[]
-
-        for I in range(0,4):
+        for I in range(0, 4):
             img = imgs[I]
-            InterpPoints=[]
-            InterpValues=[]
-            #Set up Interpolation, im sure there is a far better way of doing this in a more python way...
+            InterpPoints = []
+            InterpValues = []
+            # Set up Interpolation, im sure there is a far better way of doing this in a more python way...
             for X in range(img.shape[1]):
                 for Y in range(img.shape[0]):
-                    InterpPoints.append([Y,X])
-                    InterpValues.append(img[Y,X])
+                    InterpPoints.append([Y, X])
+                    InterpValues.append(img[Y, X])
 
-            colors = ['r','g','b','y']
+            colors = ["r", "g", "b", "y"]
             ProcessedSizes.append(HoleSize[I])
-            UpperRect,LowerRect= GetCutOffs(img)
-            ROISizeUpper = UpperRect.get_height()/4.0
-            ROISizeLower = LowerRect.get_width()/4.0
+            UpperRect, LowerRect = GetCutOffs(img)
+            ROISizeUpper = UpperRect.get_height() / 4.0
+            ROISizeLower = LowerRect.get_width() / 4.0
             if self.report:
                 ax0 = fig.add_subplot(gs[0, I])
                 ax0.imshow(img)
-                ax0.set_title("Hole Size: " + str(HoleSize[I])+" mm")
-            
+                ax0.set_title("Hole Size: " + str(HoleSize[I]) + " mm")
+
             AllLinesAndResultsHor = []
             ContrastResponseResultsHor = []
             AllLinesAndResultsVert = []
             ContrastResponseResultsVert = []
-            MiddlesHor=[]
-            MiddlesVert=[]
+            MiddlesHor = []
+            MiddlesVert = []
 
-            xUpper=0
-            yUpper=0
-            
-            xLower=LowerRect.get_x()
-            yLower=0
-            
+            xUpper = 0
+            yUpper = 0
+
+            xLower = LowerRect.get_x()
+            yLower = 0
+
             for i in range(4):
-                #PixelSteps is the size of the peg in pixel spac
-                PegSize_In_Pixels = HoleSize[I]/self.ACR_obj.pixel_spacing[0]
-                #Horizontal Component
-                rect = patches.Rectangle((xUpper, yUpper), img.shape[1]-1, ROISizeUpper, linewidth=1, edgecolor=colors[i], facecolor='none', linestyle="-")
+                # PixelSteps is the size of the peg in pixel spac
+                PegSize_In_Pixels = HoleSize[I] / self.ACR_obj.pixel_spacing[0]
+                # Horizontal Component
+                rect = patches.Rectangle(
+                    (xUpper, yUpper),
+                    img.shape[1] - 1,
+                    ROISizeUpper,
+                    linewidth=1,
+                    edgecolor=colors[i],
+                    facecolor="none",
+                    linestyle="-",
+                )
                 if self.report:
-                    plt.gca().add_patch(patches.Rectangle((xUpper, yUpper), UpperRect.get_width(), ROISizeUpper, linewidth=1, edgecolor=colors[i], facecolor='none', linestyle="-"))
-                yUpper+=ROISizeUpper
-                MiddlesHor.append( (rect.get_y()+rect.get_y()+rect.get_height())/2.0 )
-                Lines = ExtractLines(rect,InterpPoints,InterpValues,img)
-                AllLinesAndResultsHor.append([Lines,None,None,None,None])
+                    plt.gca().add_patch(
+                        patches.Rectangle(
+                            (xUpper, yUpper),
+                            UpperRect.get_width(),
+                            ROISizeUpper,
+                            linewidth=1,
+                            edgecolor=colors[i],
+                            facecolor="none",
+                            linestyle="-",
+                        )
+                    )
+                yUpper += ROISizeUpper
+                MiddlesHor.append(
+                    (rect.get_y() + rect.get_y() + rect.get_height()) / 2.0
+                )
+                Lines = ExtractLines(rect, InterpPoints, InterpValues, img)
+                AllLinesAndResultsHor.append([Lines, None, None, None, None])
                 ContrastResponseResultsHor.append(None)
-                ContrastResponseResultsHor[-1], AllLinesAndResultsHor[-1][1], AllLinesAndResultsHor[-1][2], AllLinesAndResultsHor[-1][3], AllLinesAndResultsHor[-1][4] = GetContrastResponseFactor(Lines,PegSize_In_Pixels,HoleSize[I])
-                
-                #Vertical Component
-                rect = patches.Rectangle((xLower, yLower), ROISizeLower,img.shape[0], linewidth=1, edgecolor=colors[i], facecolor='none', linestyle="--")
-                if self.report:
-                    plt.gca().add_patch(patches.Rectangle((xLower, LowerRect.get_y()), ROISizeLower,LowerRect.get_height(), linewidth=1, edgecolor=colors[i], facecolor='none', linestyle="--"))
-                xLower+=ROISizeLower
-                MiddlesVert.append( (rect.get_x()+rect.get_x()+rect.get_width())/2.0 )
-                Lines = ExtractLines(rect,InterpPoints,InterpValues,img)
-                AllLinesAndResultsVert.append([Lines,None,None,None,None])
-                ContrastResponseResultsVert.append(None)
-                ContrastResponseResultsVert[-1], AllLinesAndResultsVert[-1][1], AllLinesAndResultsVert[-1][2], AllLinesAndResultsVert[-1][3], AllLinesAndResultsVert[-1][4] = GetContrastResponseFactor(Lines,PegSize_In_Pixels,HoleSize[I])
-            
+                (
+                    ContrastResponseResultsHor[-1],
+                    AllLinesAndResultsHor[-1][1],
+                    AllLinesAndResultsHor[-1][2],
+                    AllLinesAndResultsHor[-1][3],
+                    AllLinesAndResultsHor[-1][4],
+                ) = GetContrastResponseFactor(Lines, PegSize_In_Pixels, HoleSize[I])
 
-            BestHorIndex=ContrastResponseResultsHor.index(max(ContrastResponseResultsHor))
-            BestVertIndex=ContrastResponseResultsVert.index(max(ContrastResponseResultsVert))
-            
+                # Vertical Component
+                rect = patches.Rectangle(
+                    (xLower, yLower),
+                    ROISizeLower,
+                    img.shape[0],
+                    linewidth=1,
+                    edgecolor=colors[i],
+                    facecolor="none",
+                    linestyle="--",
+                )
+                if self.report:
+                    plt.gca().add_patch(
+                        patches.Rectangle(
+                            (xLower, LowerRect.get_y()),
+                            ROISizeLower,
+                            LowerRect.get_height(),
+                            linewidth=1,
+                            edgecolor=colors[i],
+                            facecolor="none",
+                            linestyle="--",
+                        )
+                    )
+                xLower += ROISizeLower
+                MiddlesVert.append(
+                    (rect.get_x() + rect.get_x() + rect.get_width()) / 2.0
+                )
+                Lines = ExtractLines(rect, InterpPoints, InterpValues, img)
+                AllLinesAndResultsVert.append([Lines, None, None, None, None])
+                ContrastResponseResultsVert.append(None)
+                (
+                    ContrastResponseResultsVert[-1],
+                    AllLinesAndResultsVert[-1][1],
+                    AllLinesAndResultsVert[-1][2],
+                    AllLinesAndResultsVert[-1][3],
+                    AllLinesAndResultsVert[-1][4],
+                ) = GetContrastResponseFactor(Lines, PegSize_In_Pixels, HoleSize[I])
+
+            BestHorIndex = ContrastResponseResultsHor.index(
+                max(ContrastResponseResultsHor)
+            )
+            BestVertIndex = ContrastResponseResultsVert.index(
+                max(ContrastResponseResultsVert)
+            )
+
             if self.report:
                 ax_hor = fig.add_subplot(gs[1, I])
-                ax_hor.plot(AllLinesAndResultsHor[BestHorIndex][0],color="g",linestyle="-")
-                ax_hor.set_xlim(-1,UpperRect.get_width())
-                ax_hor.axhline(y=AllLinesAndResultsHor[BestHorIndex][1], color='r', linestyle='-')
-                ax_hor.axhline(y=AllLinesAndResultsHor[BestHorIndex][2], color='b', linestyle='-')
-                ax_hor.plot(AllLinesAndResultsHor[BestHorIndex][3],AllLinesAndResultsHor[BestHorIndex][4],marker="x", color="orange",linestyle="")
-                #ax_hor.get_yaxis().set_visible(False)
-                ax0.plot([0,UpperRect.get_x()+UpperRect.get_width()],[MiddlesHor[BestHorIndex],MiddlesHor[BestHorIndex]],linestyle = "-",color="g")
+                ax_hor.plot(
+                    AllLinesAndResultsHor[BestHorIndex][0], color="g", linestyle="-"
+                )
+                ax_hor.set_xlim(-1, UpperRect.get_width())
+                ax_hor.axhline(
+                    y=AllLinesAndResultsHor[BestHorIndex][1], color="r", linestyle="-"
+                )
+                ax_hor.axhline(
+                    y=AllLinesAndResultsHor[BestHorIndex][2], color="b", linestyle="-"
+                )
+                ax_hor.plot(
+                    AllLinesAndResultsHor[BestHorIndex][3],
+                    AllLinesAndResultsHor[BestHorIndex][4],
+                    marker="x",
+                    color="orange",
+                    linestyle="",
+                )
+                # ax_hor.get_yaxis().set_visible(False)
+                ax0.plot(
+                    [0, UpperRect.get_x() + UpperRect.get_width()],
+                    [MiddlesHor[BestHorIndex], MiddlesHor[BestHorIndex]],
+                    linestyle="-",
+                    color="g",
+                )
 
                 ax_vert = fig.add_subplot(gs[2, I])
-                ax_vert.plot(AllLinesAndResultsVert[BestVertIndex][0],color="g",linestyle="--")
-                ax_vert.set_xlim(-1,LowerRect.get_height())
-                ax_vert.axhline(y=AllLinesAndResultsVert[BestVertIndex][1], color='r', linestyle='-')
-                ax_vert.axhline(y=AllLinesAndResultsVert[BestVertIndex][2], color='b', linestyle='-')
-                ax_vert.plot(AllLinesAndResultsVert[BestVertIndex][3],AllLinesAndResultsVert[BestVertIndex][4],marker="x", color="orange",linestyle="")
-                #ax_vert.get_yaxis().set_visible(False)
-                ax0.plot([MiddlesVert[BestVertIndex],MiddlesVert[BestVertIndex]],[LowerRect.get_y(),len(img)-1],linestyle = "--",color="g")
+                ax_vert.plot(
+                    AllLinesAndResultsVert[BestVertIndex][0], color="g", linestyle="--"
+                )
+                ax_vert.set_xlim(-1, LowerRect.get_height())
+                ax_vert.axhline(
+                    y=AllLinesAndResultsVert[BestVertIndex][1], color="r", linestyle="-"
+                )
+                ax_vert.axhline(
+                    y=AllLinesAndResultsVert[BestVertIndex][2], color="b", linestyle="-"
+                )
+                ax_vert.plot(
+                    AllLinesAndResultsVert[BestVertIndex][3],
+                    AllLinesAndResultsVert[BestVertIndex][4],
+                    marker="x",
+                    color="orange",
+                    linestyle="",
+                )
+                # ax_vert.get_yaxis().set_visible(False)
+                ax0.plot(
+                    [MiddlesVert[BestVertIndex], MiddlesVert[BestVertIndex]],
+                    [LowerRect.get_y(), len(img) - 1],
+                    linestyle="--",
+                    color="g",
+                )
 
             ContrastResponsesHorAllRes.append(max(ContrastResponseResultsHor))
             ContrastResponsesVertAllRes.append(max(ContrastResponseResultsVert))
 
-
         if self.report:
-            AxOverall = fig.add_subplot(gs[3,:])
-            AxOverall.plot(ProcessedSizes,ContrastResponsesHorAllRes,marker="x",linestyle="-",label="Horizontal Contrast Response")
-            AxOverall.plot(ProcessedSizes,ContrastResponsesVertAllRes,marker="x",linestyle="-",label="Vertical Contrast Response")
-            AxOverall.set_xlim(1.2,0.7)
+            AxOverall = fig.add_subplot(gs[3, :])
+            AxOverall.plot(
+                ProcessedSizes,
+                ContrastResponsesHorAllRes,
+                marker="x",
+                linestyle="-",
+                label="Horizontal Contrast Response",
+            )
+            AxOverall.plot(
+                ProcessedSizes,
+                ContrastResponsesVertAllRes,
+                marker="x",
+                linestyle="-",
+                label="Vertical Contrast Response",
+            )
+            AxOverall.set_xlim(1.2, 0.7)
             AxOverall.legend()
             AxOverall.set_ylabel("Contrast Response")
             AxOverall.set_xlabel("Resolution")
             img_path = os.path.realpath(
-            os.path.join(self.report_path, f"{self.img_desc(dcm)}_ContrastResponse.png"))
+                os.path.join(
+                    self.report_path, f"{self.img_desc(dcm)}_ContrastResponse.png"
+                )
+            )
             plt.savefig(img_path)
             self.report_files.append(img_path)
 
-        return ContrastResponsesHorAllRes,ContrastResponsesVertAllRes
+        return ContrastResponsesHorAllRes, ContrastResponsesVertAllRes

@@ -82,7 +82,7 @@ class ACRUniformity(HazenTask):
         """Calculate the integral uniformity in accordance with ACR guidance.
 
         Args:
-            dcm (pydicom.Dataset): DICOM image object to calculate uniformity from
+            dcm (Dataset): DICOM image object to calculate uniformity from
 
         Returns:
             int or float: value of integral unformity
