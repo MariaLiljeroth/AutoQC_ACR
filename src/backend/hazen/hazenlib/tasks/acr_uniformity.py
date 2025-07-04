@@ -181,7 +181,7 @@ class ACRUniformity(HazenTask):
 
         else:  # If the image doenst give a nice blob (like the ACR wants, revert to jsut a asliding window approach which should work regardless of the noise) but its not really the ACR way...
             print(
-                "Reverting to sliding window over whole image, this sometimes happens when there is quite noisy images!"
+                "Reverting to sliding window over whole image, this sometimes happens when there are quite noisy images!"
             )
             rows, cols = np.nonzero(img_masked)[0], np.nonzero(img_masked)[1]
             mean_array = np.zeros(img_masked.shape)

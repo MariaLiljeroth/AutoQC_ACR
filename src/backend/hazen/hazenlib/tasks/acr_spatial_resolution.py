@@ -1,3 +1,15 @@
+"""
+acr_spatial_resolution.py
+
+This script contains the HazenTask subclass ACRSpatialResolution, which contains code relating to
+calculating the spatial resolution for dcms in an ACR phantom image set. This is assessed by determining
+the edge spread function across a finite region spanning the centre of the slice thickness insert. The line spread function
+is then obtained, followed by MTF50. Finally, MTF50 is inverted to quantify the spatial resolution within the image.
+
+Written by Nathan Crossley 2025
+
+"""
+
 import os
 
 import matplotlib.pyplot as plt
