@@ -14,7 +14,7 @@ import numpy as np
 import cv2
 from typing import Self, Type, Callable
 
-from backend.hazen.hazenlib.image_processing_tools.contour_validation import (
+from backend.hazen.hazenlib.masking_tools.contour_validation import (
     is_phantom_edge,
 )
 

@@ -27,7 +27,7 @@ from pydicom.dataset import FileDataset
 
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
-from backend.hazen.hazenlib.image_processing_tools.slice_mask import SliceMask
+from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 
 
 class ACRGeometricAccuracy(HazenTask):
