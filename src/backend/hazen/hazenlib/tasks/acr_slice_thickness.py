@@ -26,9 +26,10 @@ from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 from backend.hazen.hazenlib.masking_tools.contour_validation import (
     is_slice_thickness_insert,
 )
-from backend.hazen.hazenlib.utils import Point, Line
-from backend.hazen.hazenlib.tasks.support_classes.line_slice_thickness import (
-    LineSliceThickness,
+from backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
+from backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
+from backend.hazen.hazenlib.tasks.support_classes.line_2d_slice_thickness import (
+    Line2DSliceThickness,
 )
 
 
@@ -163,7 +164,7 @@ class ACRSliceThickness(HazenTask):
 
         return slice_thickness
 
-    def place_lines(self, image: np.ndarray, mask: np.ndarray) -> list[Line]:
+    def place_lines(self, image: np.ndarray, mask: np.ndarray) -> list[Line2D]:
         """Places line on image within slice thickness insert.
         Works for a rotated phantom.
 
@@ -181,26 +182,26 @@ class ACRSliceThickness(HazenTask):
 
         # Create list of Point objects for the four corners of the contour
         corners = cv2.boxPoints(cv2.minAreaRect(insert))
-        corners = [Point(*p) for p in corners]
+        corners = [Point2D(*p) for p in corners]
 
         # Define short sides of contours by list of line objects
         corners = sorted(corners, key=lambda point: corners[0].get_distance_to(point))
-        short_sides = [Line(*corners[:2]), Line(*corners[2:])]
+        short_sides = [Line2D(*corners[:2]), Line2D(*corners[2:])]
 
         # Get sublines of short sides and force start point to be higher in y
-        sublines = [line.get_subline(perc=30) for line in short_sides]
+        sublines = [line.get_subline(percentage=30) for line in short_sides]
         for line in sublines:
             if line.start.y < line.end.y:
                 line.point_swap()
 
         # Define connecting lines
         connecting_lines = [
-            LineSliceThickness(sublines[0].start, sublines[1].start),
-            LineSliceThickness(sublines[0].end, sublines[1].end),
+            Line2DSliceThickness(sublines[0].start, sublines[1].start),
+            Line2DSliceThickness(sublines[0].end, sublines[1].end),
         ]
 
         # Final lines are sublines of connecting lines
-        final_lines = [line.get_subline(perc=95) for line in connecting_lines]
+        final_lines = [line.get_subline(percentage=95) for line in connecting_lines]
         for line in final_lines:
             line.get_signal(image)
 

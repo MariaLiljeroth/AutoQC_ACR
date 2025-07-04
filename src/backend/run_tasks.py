@@ -171,7 +171,6 @@ def format_results(results: dict) -> dict:
         # get task name by mapping task class back to string
         task_key = CLASS_STR_TO_TASK[subdict["task"]]
 
-        print(file_value)
         # get best matching coil by matching file description with expected coils
         coil_key = substring_matcher(
             file_value[0] if isinstance(file_value, list) else file_value,
