@@ -34,7 +34,7 @@ from backend.hazen.hazenlib.tasks.support_classes.line_2d_slice_thickness import
 
 class ACRSliceThickness(HazenTask):
     """Subclass of HazenTask that contains code relating to calculating
-    the slice thickness of dcm images of the ACR phantom.
+    the slice thickness of dcm images of the ACR phantom image set.
     """
 
     def __init__(self, **kwargs):
@@ -130,7 +130,6 @@ class ACRSliceThickness(HazenTask):
 
         # report images if requested
         if self.report:
-
             fig, axes = plt.subplots(1, 3, figsize=(16, 8))
 
             # show sliced used for calculations
@@ -184,7 +183,7 @@ class ACRSliceThickness(HazenTask):
                 )
             )
 
-            # Save the plot and save path as an attribute.
+            # Save the plot and save path to report files list.
             fig.savefig(image_path, dpi=300)
             plt.close()
             self.report_files.append(image_path)

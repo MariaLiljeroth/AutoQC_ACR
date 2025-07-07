@@ -26,7 +26,7 @@ from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 
 class ACRSNR(HazenTask):
     """Subclass of HazenTask that contains code relating to calculating
-    the SNR of dcm images in the ACR phantom.
+    the SNR of dcm images in the ACR phantom image set.
     """
 
     def __init__(self, **kwargs):
@@ -64,7 +64,7 @@ class ACRSNR(HazenTask):
                 key-value pairs, optionally path to the generated images for
                 visualisation.
         """
-        # Identify relevant slice
+        # Identify relevant slice, dcm and mask
         target_slice = self.ACR_obj.most_uniform_slice
         dcm_snr = self.ACR_obj.dcms[target_slice]
         mask_snr = self.ACR_obj.masks[target_slice]

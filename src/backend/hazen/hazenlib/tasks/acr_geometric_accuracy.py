@@ -27,7 +27,7 @@ from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 
 class ACRGeometricAccuracy(HazenTask):
     """Subclass of HazenTask that contains code relating to calculating
-    the geometric accuracy of MR dcms.
+    the geometric accuracy of dcms in the ACR phantom image set.
     """
 
     def __init__(self, **kwargs):
