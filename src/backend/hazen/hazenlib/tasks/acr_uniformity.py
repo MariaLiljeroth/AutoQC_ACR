@@ -10,7 +10,7 @@ This is done by first defining a large 200cm2 ROI before placing 1cm2 ROIs at ev
 the large ROI. At each point, the mean of the 1cm2 ROI is calculated. The ROIs with the maximum and
 minimum mean value are used to calculate the integral uniformity. The results are also visualised.
 
-Created by Yassine Azma
+Created by Yassine Azma (Adapted by Nathan Crossley for local RSCH purposes, 2025)
 yassine.azma@rmh.nhs.uk
 
 13/01/2022
@@ -18,43 +18,54 @@ yassine.azma@rmh.nhs.uk
 
 import os
 import numpy as np
+from pydicom import Dataset
 
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
+from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 
 
 class ACRUniformity(HazenTask):
-    """Uniformity measurement class for DICOM images of the ACR phantom
-
-    Inherits from HazenTask class
+    """Subclass of Hazentask that contains code relating to calculating
+    the percentage integral uniformity of dcm images of the ACR phantom image set.
     """
 
     def __init__(self, **kwargs):
+        # Call initialiser of HazenTask
         super().__init__(**kwargs)
-        # Initialise ACR object
+
+        # Instantiate ACRObject class using dcm list passed in within kwargs
         self.ACR_obj = ACRObject(self.dcm_list, kwargs)
 
     def run(self) -> dict:
-        """Main function for performing uniformity measurement
-        using slice 7 from the ACR phantom image set
+        """Entrypoint function to trigger the uniformity calculation, using the
+        forst uniform slice of the ACR phantom image set.
 
         Returns:
-            dict: results are returned in a standardised dictionary structure specifying the task name, input DICOM Series Description + SeriesNumber + InstanceNumber, task measurement key-value pairs, optionally path to the generated images for visualisation
+            dict: results are returned in a standardised dictionary
+                structure specifying the task name, input DICOM Series
+                Description + SeriesNumber + InstanceNumber, task measurement
+                key-value pairs, optionally path to the generated images
+                for visualisation
         """
-        # Initialise results dictionary
+        # Identify relevant slice, dcm and mask
         target_slice = self.ACR_obj.most_uniform_slice
         dcm_unif = self.ACR_obj.dcms[target_slice]
         mask_unif = self.ACR_obj.masks[target_slice]
 
+        # Initialise results dictionary and add image description
         results = self.init_result_dict()
         results["file"] = self.img_desc(dcm_unif)
 
         try:
-            # result = self.get_integral_uniformity(self.ACR_obj.slice7_dcm)
-            # results["measurement"] = {"integral uniformity %": round(result, 2)}
+
+            # get uniformity measurement of chosen dcm and mask.
+            # max and min values and positions also reported.
             unif, max_roi, min_roi, max_pos, min_pos = self.get_integral_uniformity(
                 dcm_unif, mask_unif
             )
+
+            # append results to results dict
             results["measurement"] = {
                 "integral uniformity %": round(unif, 2),
                 "max roi": round(max_roi, 1),
@@ -62,11 +73,15 @@ class ACRUniformity(HazenTask):
                 "max pos": max_pos,
                 "min pos": min_pos,
             }
+
+            # signal to user that uniformity has been calculated for given dcm
             print(
                 f"{self.img_desc(dcm_unif)}: Percentage integral uniformity calculated."
             )
 
         except Exception as e:
+
+            # alert the user that uniformity could not be calculated and why
             print(
                 f"{self.img_desc(dcm_unif)}: Could not calculate percentage integral uniformity because of: {e}"
             )
@@ -78,62 +93,77 @@ class ACRUniformity(HazenTask):
 
         return results
 
-    def get_integral_uniformity(self, dcm, mask_unif):
-        """Calculate the integral uniformity in accordance with ACR guidance.
+    def get_integral_uniformity(
+        self, dcm: Dataset, mask_unif: SliceMask
+    ) -> tuple[float, float, float, tuple[int], tuple[int]]:
+        """Measure percentage integral uniformity of the provided dcm.
+        Define a test circular mask around slice mask's centre. Calculate
+        the min and max pixel values and then calculate percentage integral
+        uniformity. Fallback sliding window method is provided.
 
         Args:
-            dcm (Dataset): DICOM image object to calculate uniformity from
+            dcm (Dataset): Dcm of chosen ACR slice for uniformity task.
+            mask_unif (SliceMask): Corresponding mask of chosen dcm.
 
         Returns:
-            int or float: value of integral unformity
+            tuple[float, float, float, tuple[int], tuple[int]]: Returns percentage
+                integral uniformity, max and min vals as well as positions of max and min.
         """
+
         img = dcm.pixel_array
         from pydicom.pixel_data_handlers.util import apply_modality_lut
 
         img = apply_modality_lut(dcm.pixel_array, dcm).astype("uint16")
 
+        # try to get in-plane resolution
         if "PixelSpacing" in dcm:
-            res = dcm.PixelSpacing  # In-plane resolution from metadata
+            res = dcm.PixelSpacing
         else:
             import hazenlib.utils
 
             res = hazenlib.utils.GetDicomTag(dcm, (0x28, 0x30))
 
-        r_large = np.ceil(80 / res[0]).astype(
-            int
-        )  # Required pixel radius to produce ~200cm2 ROI
-        r_small = np.ceil(np.sqrt(100 / np.pi) / res[0]).astype(
-            int
-        )  # Required pixel radius to produce ~1cm2 ROI
+        # Define large radius that produces ~200cm2 ROI
+        r_large = np.ceil(80 / res[0]).astype(int)
+
+        # Define small radius that produces ~200cm2 ROI
+        r_small = np.ceil(np.sqrt(100 / np.pi) / res[0]).astype(int)
 
         if self.ACR_obj.MediumACRPhantom == True:
-            r_large = np.ceil(np.sqrt(16000 * 0.90 / np.pi) / res[0]).astype(
-                int
-            )  # Making it a 90% smaller than 160cm^2 (16000mm^2) to avoid the bit at the top
+            # Making it a 90% smaller than 160cm^2 (16000mm^2) to avoid the bit at the top
+            r_large = np.ceil(np.sqrt(16000 * 0.90 / np.pi) / res[0]).astype(int)
 
-        d_void = np.ceil(5 / res[0]).astype(
-            int
-        )  # Offset distance for rectangular void at top of phantom
-        dims = img.shape  # Dimensions of image
+        # Offset distance for rectangular void at top of phantom
+        d_void = np.ceil(5 / res[0]).astype(int)
 
+        # Store image dims
+        dims = img.shape
+
+        # get chosen masks's cenre
         cxy = mask_unif.centre
-        base_mask = ACRObject.circular_mask(
-            (cxy[0], cxy[1] + d_void), r_small, dims
-        )  # Dummy circular mask at
-        # centroid
-        coords = np.nonzero(base_mask)  # Coordinates of mask
 
+        # construct dummy mask at centroid and save coords of mask
+        base_mask = ACRObject.circular_mask((cxy[0], cxy[1] + d_void), r_small, dims)
+        coords = np.nonzero(base_mask)
+
+        # get large ROI by circular mask
         lroi = self.ACR_obj.circular_mask([cxy[0], cxy[1] + d_void], r_large, dims)
+
+        # get masked image using large circular test mask
         img_masked = lroi * img
 
+        # get half max pixel value for non-zero masked image
         half_max = np.percentile(img_masked[np.nonzero(img_masked)], 50)
 
+        # split masked image into upper and lower halves, according to pixel value
         min_image = img_masked * (img_masked < half_max)
         max_image = img_masked * (img_masked > half_max)
 
+        # store coords of upper and lower halves of masked image
         min_rows, min_cols = np.nonzero(min_image)[0], np.nonzero(min_image)[1]
         max_rows, max_cols = np.nonzero(max_image)[0], np.nonzero(max_image)[1]
 
+        # construct array to receive mean vals
         mean_array = np.zeros(img_masked.shape)
 
         def uniformity_iterator(masked_image, sample_mask, rows, cols):

@@ -46,7 +46,7 @@ class ACRSliceThickness(HazenTask):
 
     def run(self) -> dict:
         """Entrypoint function to trigger the slice thickness calculation,
-        using first slice of the ACR phantom data set.
+        using first slice of the ACR phantom image set.
 
         Returns:
             dict: results are returned in a standardised dictionary
