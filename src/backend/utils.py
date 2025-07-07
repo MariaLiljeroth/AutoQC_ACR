@@ -52,9 +52,12 @@ def substring_matcher(string: str, strings_to_search: list[str]) -> str:
     # order list of test strings based on string similarity - to get most similar string
     best_match = sorted(
         strings_to_search,
-        key=lambda x: fuzz.ratio(x.lower(), string.lower()),
+        key=lambda x: fuzz.partial_ratio(x.lower(), string.lower()),
         reverse=True,
     )[0]
+    print(
+        f"String to match is {string}. Best match is {best_match}. Match probabilities are {[(x, fuzz.partial_ratio(string.lower(), x.lower())) for x in strings_to_search]}"
+    )
     return best_match
 
 
