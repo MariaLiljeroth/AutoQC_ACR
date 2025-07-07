@@ -450,6 +450,7 @@ class ACRSpatialResolution(HazenTask):
             self.esf[0],
             self.esf[1],
             p0=[np.ptp(self.esf[1]), np.min(self.esf[1]), 1, np.median(self.esf[0])],
+            maxfev=2500,
         )
 
         # get equally-spaced x array across raw input x-range
