@@ -89,7 +89,7 @@ class ACRSpatialResolution(HazenTask):
 
             # alert the user that spatial resolution could not be calculated and why
             print(
-                f"Could not calculate the spatial resolution for {self.img_desc(mtf_dcm)} because of : {e}"
+                f"{self.img_desc(mtf_dcm)}: Could not calculate spatial resolution because of : {e}"
             )
 
         # only return reports if requested
@@ -261,37 +261,21 @@ class ACRSpatialResolution(HazenTask):
                 insert is approx self.TARGET_THETA_INSERT off axis.
         """
 
-        def get_insert_contour(mask: SliceMask) -> np.ndarray:
-            """Gets the contour for the slice thickness insert from a binary mask.
-            Does this by finding all contours and comparing properties of each to
-            the expected properties.
-
-            Args:
-                mask (SliceMask): Binary mask to find slice thickness insert within.
-
-            Returns:
-                np.ndarray: Detected slice thickness insert.
-            """
-
-            # get all contours within mask
-            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-            # get the first contour that matches the criteria for the slice thickness mask
-            insert = [c for c in contours if is_slice_thickness_insert(c, mask.shape)][
-                0
-            ]
-
-            return insert
-
         # get slice thickness insert contour from mask
-        insert = get_insert_contour(mask)
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        insert = [c for c in contours if is_slice_thickness_insert(c, mask.shape)][0]
 
         # rotate image and mask so slice thickness insert should be self.TARGET_THETA_INSERT off axis
         image_rotated = self.rotate_rel_to_insert(self.image_orig, insert)
         mask_rotated = self.rotate_rel_to_insert(mask, insert)
 
-        # get slice thickness insert after rotation
-        insert_rotated = get_insert_contour(mask_rotated)
+        # get slice thickness insert after rotation (second largest perimeter)
+        contours_rotated, _ = cv2.findContours(
+            mask_rotated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+        )
+        insert_rotated = sorted(contours_rotated, key=lambda c: cv2.arcLength(c, True))[
+            -2
+        ]
 
         # define the centre for the ROI that will be used for spatial resolution calcs.
         roi_centre = self.define_ROI_centre(insert_rotated)

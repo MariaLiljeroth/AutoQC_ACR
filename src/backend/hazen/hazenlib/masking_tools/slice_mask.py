@@ -13,6 +13,7 @@ Written by Nathan Crossley 2025
 import numpy as np
 import cv2
 from typing import Self, Type, Callable
+from skimage.restoration import estimate_sigma
 
 from backend.hazen.hazenlib.masking_tools.contour_validation import (
     is_phantom_edge,
@@ -103,7 +104,7 @@ class SliceMask(np.ndarray):
             if cls._expected_contours_visible(contours, mask, additional_contour_check):
 
                 # optionally pad threshold
-                pad = 0
+                pad = 5
                 mask_padded, contours_final = cls._get_mask_and_contours(
                     image_preprocessed, dynamic_thresh + pad, mode_findContours
                 )
@@ -137,21 +138,28 @@ class SliceMask(np.ndarray):
             "uint8"
         )
 
-        # denoise image with light denoising strength proportional to image standard deviation
-        image_denoised = cv2.fastNlMeansDenoising(
-            image_normalized,
-            h=np.std(image_normalized) * 0.25,
-            templateWindowSize=3,
-            searchWindowSize=11,
-        )
+        # set denoised image intial value
+        image_denoised = image_normalized.copy()
 
-        # perform morphological closing to close gaps at phantom edge
-        kernel_closing = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (closing_strength, closing_strength)
-        )
-        image_closed = cv2.morphologyEx(image_denoised, cv2.MORPH_CLOSE, kernel_closing)
+        # calculate initial noise level for later reference
+        sigma_original = estimate_sigma(image_normalized)
 
-        return image_closed
+        # calculate noise required to stop iteration
+        sigma_thresh = sigma_original * 0.05
+
+        # get denoised image by non local means method, testing different h-values
+        # until noise low enough to continue
+        k = 0.2
+        while estimate_sigma(image_denoised) > sigma_thresh and k < 2:
+            image_denoised = cv2.fastNlMeansDenoising(
+                image_normalized,
+                h=sigma_original * k,
+                templateWindowSize=7,
+                searchWindowSize=21,
+            )
+            k += 0.2
+
+        return image_denoised
 
     @staticmethod
     def _get_mask_and_contours(

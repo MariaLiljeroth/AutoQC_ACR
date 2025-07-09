@@ -55,9 +55,6 @@ def substring_matcher(string: str, strings_to_search: list[str]) -> str:
         key=lambda x: fuzz.partial_ratio(x.lower(), string.lower()),
         reverse=True,
     )[0]
-    print(
-        f"String to match is {string}. Best match is {best_match}. Match probabilities are {[(x, fuzz.partial_ratio(string.lower(), x.lower())) for x in strings_to_search]}"
-    )
     return best_match
 
 

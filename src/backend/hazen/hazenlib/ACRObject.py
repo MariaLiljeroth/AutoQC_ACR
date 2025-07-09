@@ -169,41 +169,27 @@ class ACRObject:
         )
         return mask
 
-    def find_most_uniform_slice(self) -> dict:
-        entropies = []
+    def find_most_uniform_slice(self) -> int:
+        """Finds the index of the most uniform slice in the ACR
+        phantom image set. This is used for geometric accuracy,
+        uniformity and SNR calculations.
 
-        for idx in self.unif_test_idxs:
-            image, true_mask = self.images[idx], self.masks[idx]
+        Returns:
+            int: Index of most uniform slice in image set.
+        """
 
-            # get circular test mask and masked float image
-            radius_test_mask = true_mask.radius * 11 / 12
-            test_circ_mask = self.circular_mask(
-                true_mask.centre, radius_test_mask, true_mask.shape
-            )
-            image_masked = image * test_circ_mask
-            image_masked = image_masked.astype(np.float32)
+        # get test values for quantifying presence of structures on slices
+        test_vals = [self.get_structural_test_vals(idx) for idx in self.unif_test_idxs]
 
-            difference = image_masked - cv2.GaussianBlur(image_masked, (51, 51), 0)
-            image_masked[test_circ_mask] = difference[test_circ_mask]
+        # define bins to use for all three slices for shannon entropy
+        min_global = min(map(min, test_vals))
+        max_global = max(map(max, test_vals))
+        bins = np.linspace(min_global, max_global, 64)
 
-            # reduce radius of mask slightly to avoid edge effects.
-            reduced_mask = self.circular_mask(
-                true_mask.centre, radius_test_mask * 0.95, true_mask.shape
-            )
-            image_masked = image_masked * reduced_mask
-            texture = image_masked[reduced_mask].reshape(-1)
+        # calculate shannon entropy for each slice
+        entropies = [self.calculate_shannon_entropy(tvs, bins) for tvs in test_vals]
 
-            # create bins for histogram
-            bin_width = 108
-            data_min, data_max = np.min(texture), np.max(texture)
-            bins = np.arange(data_min, data_max + bin_width + 1e-8, bin_width)
-
-            # calculate shannon entropy
-            hist, _ = np.histogram(texture, bins=bins)
-            probs = hist / hist.sum()
-            shannon_entropy = -np.sum(probs[probs > 0] * np.log2(probs[probs > 0]))
-            entropies.append(shannon_entropy)
-
+        # most uniform slice is slice with the lowest entropy (i.e. probabilities weighted due to structure presence).
         most_uniform_slice = self.unif_test_idxs[np.argmin(entropies)]
 
         return most_uniform_slice
@@ -236,6 +222,55 @@ class ACRObject:
         mask = (X - centre[0]) ** 2 + (Y - centre[1]) ** 2 <= radius**2
 
         return mask
+
+    def get_structural_test_vals(self, slice_idx: int) -> np.ndarray:
+        """Returns test values from slice for calculating measure
+        of structure presence (shannon's entropy).
+
+        Args:
+            slice_idx (int): Index for slice to get test values from.
+
+        Returns:
+            np.ndarray: Test values for quantifying structure presence.
+        """
+
+        # get image and mask associated with index
+        image, true_mask = self.images[slice_idx], self.masks[slice_idx]
+
+        # remove overall intensity gradient so does not sway entropy calcs
+        image_float = image.astype(np.float32)
+        image_corrected = image_float - cv2.GaussianBlur(image_float, (51, 51), 0)
+
+        # test values extracted from within circular mask.
+        # mask radius less than true mask's radius to prevent edge effects from contributing to entropy.
+        test_circ_mask = self.circular_mask(
+            true_mask.centre, true_mask.radius * 11 / 12, true_mask.shape
+        )
+        test_vals = image_corrected[test_circ_mask].reshape(-1)
+
+        return test_vals
+
+    def calculate_shannon_entropy(self, vals: np.ndarray, bins: np.ndarray) -> float:
+        """Calculates the shannon entropy from the passed test values.
+        Used as a measure of structure presence to identify most uniform
+        slice in ACR phantom image set.
+
+        Args:
+            vals (np.ndarray): Test values for calculation of entropy.
+            bins (np.ndarray): Pixel bins for discretising test values for entropy cals.
+
+        Returns:
+            float: Shannon entropy for test values.
+        """
+
+        # get histogram using passed bins and convert to probabilities
+        hist, _ = np.histogram(vals, bins=bins)
+        probs = hist / hist.sum()
+
+        # calculate shannon entropy, encluding zero-vals (as log involved)
+        shannon_entropy = -np.sum(probs[probs > 0] * np.log2(probs[probs > 0]))
+
+        return shannon_entropy
 
     @staticmethod
     def rotate_point(origin: tuple, point: tuple, angle: int):
