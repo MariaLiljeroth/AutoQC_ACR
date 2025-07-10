@@ -8,9 +8,7 @@ from pydicom.pixel_data_handlers.util import apply_modality_lut
 
 from backend.hazen.hazenlib.utils import get_image_orientation
 from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import (
-    is_slice_thickness_insert,
-)
+from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
 
 
 class ACRObject:
@@ -43,7 +41,15 @@ class ACRObject:
         # take masks of slices 4-6 for uniformity checks
         self.unif_test_idxs = [4, 5, 6]
         for idx in self.unif_test_idxs:
-            self.masks[idx] = SliceMask(self.images[idx])
+
+            # # intialise contour validation object so as to determine contour validation functions
+            contour_validation = ContourValidation(self.images[idx])
+
+            # get mask of particular slice, searching for phantom edge only
+            self.masks[idx] = SliceMask(
+                self.images[idx],
+                contour_validation.phantom_edge_scorer,
+            )
 
         # find most uniform slice
         self.most_uniform_slice = self.find_most_uniform_slice()
@@ -160,12 +166,19 @@ class ACRObject:
             Mask of slice 0.
 
         """
+
+        # get first image in stack
         image_0 = self.images[0]
+
+        # intialise contour validation object so as to determine contour validation functions
+        contour_validation = ContourValidation(image_0)
+
+        # create slice mask, searching for both phantom edge and slice thickness insert
+        # as both should be present in first slice
         mask = SliceMask(
             image_0,
-            additional_contour_check=lambda c: is_slice_thickness_insert(
-                c, image_0.shape
-            ),
+            contour_validation.phantom_edge_scorer,
+            contour_validation.slice_thickness_insert_scorer,
         )
         return mask
 

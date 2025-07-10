@@ -32,9 +32,7 @@ from scipy.special import sici
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
 from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import (
-    is_slice_thickness_insert,
-)
+from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
 
 
 class ACRSpatialResolution(HazenTask):
@@ -263,7 +261,12 @@ class ACRSpatialResolution(HazenTask):
 
         # get slice thickness insert contour from mask
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        insert = [c for c in contours if is_slice_thickness_insert(c, mask.shape)][0]
+        contour_validation = ContourValidation(mask)
+
+        insert_idx = np.argmax(
+            [contour_validation.slice_thickness_insert_scorer(c) for c in contours]
+        )
+        insert = contours[insert_idx]
 
         # rotate image and mask so slice thickness insert should be self.TARGET_THETA_INSERT off axis
         image_rotated = self.rotate_rel_to_insert(self.image_orig, insert)

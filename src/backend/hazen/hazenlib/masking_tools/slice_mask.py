@@ -3,8 +3,9 @@ slice_mask.py
 
 This script defines a custom np.ndarray subclass SliceMask, to represent the binary mask of a given slice of the ACR phantom.
 The mask is obtained by iteratively testing for the presence of the phantom edge with a dynamically increasing pixel threshold.
-An additional contour checking function (returning bool) can be passed to the class when instantiating so the dynamic thresholding
-continues until this contour is found, as well as the phantom edge. Additional mask-related utility functions are also included in this class.
+An additional contour checking function can be passed to the class when instantiating so that the dynamic thresholding also
+continues until this contour is found and its similarity score no longer is increasing. Additional mask-related utility functions
+are also included in this class.
 
 Written by Nathan Crossley 2025
 
@@ -15,10 +16,6 @@ import cv2
 from typing import Self, Type, Callable
 from skimage.restoration import estimate_sigma
 
-from backend.hazen.hazenlib.masking_tools.contour_validation import (
-    is_phantom_edge,
-)
-
 
 class SliceMask(np.ndarray):
     """Subclass of np.ndarray to represent a binary mask of a given slice of the ACR phantom.
@@ -26,19 +23,29 @@ class SliceMask(np.ndarray):
     for the presence of expected contours.
     """
 
-    def __new__(cls, image: np.ndarray, **kwargs) -> Self:
-        """Instantiates a new instance of the SliceMask class
-        Dynamic thresholding occurs here so a view of the mask can be passed as the object itself.
+    def __new__(
+        cls,
+        image: np.ndarray,
+        phantom_edge_scorer: Callable,
+        secondary_contour_scorer: Callable = None,
+    ) -> Self:
+        """Creates a new object of Self, which is a subclass of np.ndarray.
 
         Args:
-            image (np.ndarray): The slice of the ACR phantom to get a binary mask of.
+            image (np.ndarray): Image to calculate mask from.
+            phantom_edge_scorer (Callable): Function that returns a score based on similarity
+                between passed contour and the phantom edge.
+            secondary_contour_scorer (Callable, optional): Function that returns a score based
+                on the similarity between passed contour and a secondary expected contour. Defaults to None.
 
         Returns:
-            Self: An instance of SliceMask, with image data corresponding to binary mask of input image.
+            Self: Object of self!
         """
 
-        # get binary mask of image by dynamic thresholding and retain contours
-        mask, contours = cls.dynamically_threshold(image, **kwargs)
+        # get binary mask of image by dynamic thresholding and retaining contours
+        mask, contours = cls.dynamically_threshold(
+            image, phantom_edge_scorer, secondary_contour_scorer
+        )
 
         # assign a SliceMask view of mask to object variable
         obj = np.asarray(mask).view(cls)
@@ -48,13 +55,27 @@ class SliceMask(np.ndarray):
 
         return obj
 
-    def __init__(self, image: np.ndarray, **kwargs):
-        """Initialises the instance of SliceMask, configuring
-        relevant instance attributes.
+    def __init__(
+        self,
+        image: np.ndarray,
+        phantom_edge_scorer: Callable,
+        secondary_contour_scorer: Callable = None,
+    ):
+        """Initialises the instance of self, with callable contour
+        validation functions that were used in dynamic thresholding.
+        An elliptical mask is also calculated for later processing.
 
         Args:
-            image (np.ndarray): The slice of the ACR phantom to get a binary mask of.
+            image (np.ndarray): Image that mask was calculated from.
+            phantom_edge_scorer (Callable): Function that returns a score based on similarity
+                between passed contour and the phantom edge.
+            secondary_contour_scorer (Callable, optional): Function that returns a score based
+                on the similarity between passed contour and a secondary expected contour. Defaults to None.
         """
+
+        # store contour detection validation functions used in dynamic thresholding process
+        self.phantom_edge_scorer = phantom_edge_scorer
+        self.secondary_contour_scorer = secondary_contour_scorer
 
         # get an elliptical mask from fitting an ellipse to the phantom edge
         # store mask, centre and radius
@@ -64,55 +85,100 @@ class SliceMask(np.ndarray):
     def dynamically_threshold(
         cls: Type[Self],
         image: np.ndarray,
-        closing_strength: int = 7,
-        mode_findContours: int = cv2.RETR_TREE,
-        dynamic_thresh_start: int = 4,
-        additional_contour_check: Callable = None,
-    ) -> tuple[np.ndarray, list[np.ndarray]]:
-        """Returns a binary mask of the input image.
-        Works by testing the presence of the phantom edge (plus an optional additional contour)
-        for a dynamically increasing pixel threshold.
+        phantom_edge_scorer: Callable,
+        secondary_contour_scorer: Callable = None,
+    ) -> tuple[np.ndarray]:
+        """Dynamically thresholds an input image based on passed
+        contour detection functions. Presence of phantom edge is used
+        as a primary indication to cease thresholding. Presence of
+        secondary, user defined contour is used to cease thresholding if
+        provided, once the contour is optimally defined.
 
         Args:
-            cls (Type[Self]): SliceMask class.
-            image (np.ndarray): The slice of the ACR phantom to get a binary mask of.
-            closing_strength (int, optional): Kernel strength for morphological closing in image preprocessing. Defaults to 7.
-            mode_findContours (int, optional): Specifies the mode for contour detection in cv2.findContours. Defaults to cv2.RETR_TREE.
-            dynamic_thresh_start (int, optional): Specifies the pixel threshold start value. Defaults to 4.
-            additional_contour_check (Callable, optional): An optional function that must return a bool based on whether a particular
-                contour meets user-defined criteria. Defaults to None.
+            cls (Type[Self]): class of Self
+            image (np.ndarray): Image used for dynamic thresholding.
+            phantom_edge_scorer (Callable): Function that returns a score based on similarity
+                between passed contour and the phantom edge.
+            secondary_contour_scorer (Callable, optional): Function that returns a score based
+                on the similarity between passed contour and a secondary expected contour. Defaults to None.
 
         Returns:
-            tuple[np.ndarray, list[np.ndarray]]: The binary mask and associated detected contours.
+            tuple[np.ndarray]: Optimum mask obtaining after dynamic thresholding and associated contours.
         """
 
         # preprocess image before thresholding
-        image_preprocessed = cls._preprocess_image(image, closing_strength)
+        image_preprocessed = cls._preprocess_image(image)
 
-        # set the dynamic threshold to the start value
-        dynamic_thresh = dynamic_thresh_start
+        # set the dynamic threshold to low start value
+        dynamic_thresh = 4
 
         # dynamically increase threshold whilst still within 8bit range
         while dynamic_thresh <= 255:
 
-            # get mask and contours for the preprocessed image and particular value for dynamic threshold
-            mask, contours = cls._get_mask_and_contours(
-                image_preprocessed, dynamic_thresh, mode_findContours
+            # select scorer functions used to test contour presence in this first step
+            # here we want to test to see if phantom edge and secondary contour are both present,
+            # as this is required for successful thresholding
+            scorers = [
+                scorer
+                for scorer in [phantom_edge_scorer, secondary_contour_scorer]
+                if scorer is not None
+            ]
+
+            # get mask and contours for a particular threshold of preprocessed image
+            # get similiary scores associated with phantom edge and secondary contour
+            scores, contours, mask = cls._test_contour_presence(
+                image_preprocessed, dynamic_thresh, scorers
             )
 
-            # check whether phantom edge and additional contour are both visible at current threshold value
-            if cls._expected_contours_visible(contours, mask, additional_contour_check):
+            # if both the phantom edge and secondary contour are present, scores both non-zero
+            if all([score != 0 for score in scores]):
 
-                # optionally pad threshold
-                pad = 5
-                mask_padded, contours_final = cls._get_mask_and_contours(
-                    image_preprocessed, dynamic_thresh + pad, mode_findContours
-                )
+                # if user doesn't want to search for a secondary contour, stop optimisation here
+                if len(scores) == 1:
+                    return mask, contours
 
-                # filter out small connected components in binary mask
-                mask_filtered = cls._filter_out_small_connec_comps(mask_padded)
+                # if user does want to search for a secondary contour, then keep increasing threshold
+                # until further increases reduces similarity score.
+                elif len(scores) == 2:
 
-                return mask_filtered, contours_final
+                    # store best found similarity scores, mask and associated contours
+                    best_secondary_score = scores[1]
+                    best_mask = mask
+                    best_contours = contours
+
+                    # define thresholding step for this final optimisation step
+                    threshold_step = 2
+
+                    while dynamic_thresh + threshold_step <= 255:
+
+                        # increase dynamic threshold
+                        dynamic_thresh += threshold_step
+
+                        # get score for secondary contour for newly increased dynamic threshold
+                        new_scores, new_contours, new_mask = cls._test_contour_presence(
+                            image_preprocessed,
+                            dynamic_thresh,
+                            [secondary_contour_scorer],
+                        )
+
+                        # scores is a 1-element list
+                        new_secondary_score = new_scores[0]
+
+                        # If new second score improves, store it
+                        plateau_tolerance = 1e-3
+                        if (
+                            new_secondary_score
+                            > best_secondary_score + plateau_tolerance
+                        ):
+                            best_secondary_score = new_secondary_score
+                            best_mask = new_mask
+                            best_contours = new_contours
+
+                        # score stopped increasing so return best values
+                        else:
+                            break
+
+                    return best_mask, best_contours
 
             # increment dynamic thresh by small amount
             dynamic_thresh += 2
@@ -121,13 +187,12 @@ class SliceMask(np.ndarray):
         raise ValueError("Expected phantom features not detected in mask creation!")
 
     @staticmethod
-    def _preprocess_image(image: np.ndarray, closing_strength: int) -> np.ndarray:
-        """Preprocess image prior to dynamic thresholding process using normalisation,
-        non-local means denoising and morphological closing.
+    def _preprocess_image(image: np.ndarray) -> np.ndarray:
+        """Preprocess image prior to dynamic thresholding process using normalisation and
+        non-local means denoising.
 
         Args:
             image (np.ndarray): The slice of the ACR phantom to get a binary mask of.
-            closing_strength (int): Kernel strength for morphological closing.
 
         Returns:
             np.ndarray: The preprocessed image.
@@ -162,94 +227,35 @@ class SliceMask(np.ndarray):
         return image_denoised
 
     @staticmethod
-    def _get_mask_and_contours(
-        image: np.ndarray, thresh: int, mode_findContours: int
-    ) -> tuple[np.ndarray, list[np.ndarray]]:
-        """Get a binary mask using a given pixel threshold and detect contours
-        of resulting mask.
+    def _test_contour_presence(
+        image: np.ndarray, thresh: int, contour_scorers: list[Callable]
+    ) -> tuple[list[float], np.ndarray, np.ndarray]:
+        """Tests the presence of contours by evaluating any contour
+        scorer functions passed by user, for each detected contour.
+        Maximum similarity score returned for each function.
 
         Args:
-            image (np.ndarray): Image to get mask of.
-            thresh (int): Pixel threshold to apply in thresholding.
-            mode_findContours (int): Mode for contour detection in cv2.findContours.
+            image (np.ndarray): Image to threshold for mask.
+            thresh (int): Thresholding value used for mask creation.
+            contour_scorers (list[Callable]): list of contour scorer functions,
+                used to extract similarity scores from contours.
 
         Returns:
-            tuple[np.ndarray, list[np.ndarray]]: Binary mask of image and list of associated detected contours.
+            tuple[list[float], np.ndarray, np.ndarray]: evaluated best scores for
+              scorer functions, used contours and used mask.
+
         """
 
         # threshold mask using thresholding value supplied
         _, mask = cv2.threshold(image, thresh, 255, cv2.THRESH_BINARY)
 
         # get contours of mask, simplifying with CHAIN_APPROX_SIMPLE
-        contours, _ = cv2.findContours(mask, mode_findContours, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        return mask, contours
+        # get highest scores evaluated for each contour scorer function
+        scores = [max([scorer(c) for c in contours]) for scorer in contour_scorers]
 
-    @staticmethod
-    def _expected_contours_visible(
-        contours: list[np.ndarray],
-        mask: np.ndarray,
-        additional_contour_check: Callable,
-    ) -> bool:
-        """Checks whether the phantom edge and (if present) the additional user-provided
-        contour are both present within the list of detected contours.
-
-        Args:
-            contours (list[np.ndarray]): list of contours within which to search for expected contours.
-            mask (np.ndarray): The mask that the contours where sourced from.
-            additional_contour_check (Callable): An optional function that must return a bool based on
-                whether a particular contour meets user-defined criteria.
-
-        Returns:
-            bool: True if all expected contours detected, False otherwise.
-        """
-
-        # checks if phantom edge is within the list of contours
-        phantom_edge_visible = any([is_phantom_edge(c, mask.shape) for c in contours])
-
-        # checks whether the user-defined additional contour is present within list of contours
-        additional_contour_visible = (
-            any([additional_contour_check(c) for c in contours])
-            if additional_contour_check is not None
-            else True
-        )
-
-        return phantom_edge_visible and additional_contour_visible
-
-    @staticmethod
-    def _filter_out_small_connec_comps(mask: np.ndarray) -> np.ndarray:
-        """Returns a filtered mask with small groups of connected pixels removed.
-        This helps to delicately remove artificial contours from the mask (e.g. from noise).
-
-        Args:
-            mask (np.ndarray): The mask to filter.
-
-        Returns:
-            np.ndarray: The filtered mask.
-        """
-
-        # gets total number of labels, mask with pixels labelled and additional stats
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-            mask, connectivity=8
-        )
-
-        # defines threshold number of pixels in group for group to be kept
-        min_connected_pixels = mask.size // 100
-
-        # get a blank mask of correct shape
-        mask_filtered = np.zeros_like(mask)
-
-        # operate on each group at once
-        for label in range(1, num_labels):
-
-            # get area associated with each group
-            area = stats[label, cv2.CC_STAT_AREA]
-
-            # if group area above threshold, keep group, otherwise left as 0.
-            if area >= min_connected_pixels:
-                mask_filtered[labels == label] = 255
-
-        return mask_filtered
+        return scores, contours, mask
 
     def _get_elliptical_mask(self) -> tuple[np.ndarray, tuple[float, float], float]:
         """Fits an ellipse to the phantom edge, creates elliptical mask and
@@ -260,7 +266,10 @@ class SliceMask(np.ndarray):
                 elliptical centre and approximate radius
         """
         # select the first contour that meets criteria for phantom edge
-        phantom_edge = [c for c in self.contours if is_phantom_edge(c, self.shape)][0]
+        phantom_edge_idx = np.argmax(
+            [self.phantom_edge_scorer(c) for c in self.contours]
+        )
+        phantom_edge = self.contours[phantom_edge_idx]
 
         # fit ellipse to selected contour to get ellipse parameters
         params = cv2.fitEllipse(phantom_edge)
@@ -410,3 +419,38 @@ class SliceMask(np.ndarray):
         )
 
         return obj
+
+    # @staticmethod
+    # def _filter_out_small_connec_comps(mask: np.ndarray) -> np.ndarray:
+    #     """Returns a filtered mask with small groups of connected pixels removed.
+    #     This helps to delicately remove artificial contours from the mask (e.g. from noise).
+
+    #     Args:
+    #         mask (np.ndarray): The mask to filter.
+
+    #     Returns:
+    #         np.ndarray: The filtered mask.
+    #     """
+
+    #     # gets total number of labels, mask with pixels labelled and additional stats
+    #     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+    #         mask, connectivity=8
+    #     )
+
+    #     # defines threshold number of pixels in group for group to be kept
+    #     min_connected_pixels = mask.size // 100
+
+    #     # get a blank mask of correct shape
+    #     mask_filtered = np.zeros_like(mask)
+
+    #     # operate on each group at once
+    #     for label in range(1, num_labels):
+
+    #         # get area associated with each group
+    #         area = stats[label, cv2.CC_STAT_AREA]
+
+    #         # if group area above threshold, keep group, otherwise left as 0.
+    #         if area >= min_connected_pixels:
+    #             mask_filtered[labels == label] = 255
+
+    #     return mask_filtered

@@ -22,9 +22,7 @@ from pydicom import Dataset
 from backend.hazen.hazenlib.HazenTask import HazenTask
 from backend.hazen.hazenlib.ACRObject import ACRObject
 from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import (
-    is_slice_thickness_insert,
-)
+from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
 from backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
 from backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
 from backend.hazen.hazenlib.tasks.support_classes.line_2d_slice_thickness import (
@@ -203,9 +201,11 @@ class ACRSliceThickness(HazenTask):
         """
 
         # Get contour of slice thickness insert.
-        insert = [c for c in mask.contours if is_slice_thickness_insert(c, mask.shape)][
-            0
-        ]
+        contour_validation = ContourValidation(image)
+        insert_idx = np.argmax(
+            [contour_validation.slice_thickness_insert_scorer(c) for c in mask.contours]
+        )
+        insert = mask.contours[insert_idx]
 
         # Create list of Point2D objects for the four corners of the contour
         corners = cv2.boxPoints(cv2.minAreaRect(insert))
