@@ -6,9 +6,11 @@ import cv2
 from pydicom import dcmread, Dataset
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 
-from backend.hazen.hazenlib.utils import get_image_orientation
-from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
+from src.backend.hazen.hazenlib.utils import get_image_orientation
+from src.backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
+from src.backend.hazen.hazenlib.masking_tools.contour_validation import (
+    ContourValidation,
+)
 
 
 class ACRObject:

@@ -17,10 +17,10 @@ import tkinter as tk
 from tkinter import messagebox
 
 from queue import Empty
-from shared.queueing import get_queue
+from src.shared.queueing import get_queue
 
-from frontend.frames.frame_config import FrameConfig
-from frontend.frames.frame_task_runner import FrameTaskRunner
+from src.frontend.frames.frame_config import FrameConfig
+from src.frontend.frames.frame_task_runner import FrameTaskRunner
 
 
 class App(tk.Tk):

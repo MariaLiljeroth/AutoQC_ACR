@@ -29,10 +29,12 @@ from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit
 from scipy.special import sici
 
-from backend.hazen.hazenlib.HazenTask import HazenTask
-from backend.hazen.hazenlib.ACRObject import ACRObject
-from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
+from src.backend.hazen.hazenlib.HazenTask import HazenTask
+from src.backend.hazen.hazenlib.ACRObject import ACRObject
+from src.backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
+from src.backend.hazen.hazenlib.masking_tools.contour_validation import (
+    ContourValidation,
+)
 
 
 class ACRSpatialResolution(HazenTask):

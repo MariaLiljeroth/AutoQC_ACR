@@ -20,9 +20,9 @@ import os
 import numpy as np
 from pydicom import Dataset
 
-from backend.hazen.hazenlib.HazenTask import HazenTask
-from backend.hazen.hazenlib.ACRObject import ACRObject
-from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
+from src.backend.hazen.hazenlib.HazenTask import HazenTask
+from src.backend.hazen.hazenlib.ACRObject import ACRObject
+from src.backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
 
 
 class ACRUniformity(HazenTask):

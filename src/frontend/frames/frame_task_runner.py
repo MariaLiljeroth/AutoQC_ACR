@@ -14,13 +14,13 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from frontend.settings import FONT_TEXT, FONT_TITLE
+from src.frontend.settings import FONT_TEXT, FONT_TITLE
 
-from backend.run_tasks import run_tasks
-from backend.dataframe_tools.dataframe_constructor import DataFrameConstructor
-from backend.dataframe_tools.dataframe_formatter import DataFrameFormatter
+from src.backend.run_tasks import run_tasks
+from src.backend.dataframe_tools.dataframe_constructor import DataFrameConstructor
+from src.backend.dataframe_tools.dataframe_formatter import DataFrameFormatter
 
-from shared.queueing import get_queue
+from src.shared.queueing import get_queue
 
 
 class FrameTaskRunner(tk.Frame):

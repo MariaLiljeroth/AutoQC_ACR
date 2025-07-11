@@ -6,7 +6,7 @@ from openpyxl.cell.cell import Cell
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from shared.queueing import get_queue
+from src.shared.queueing import get_queue
 
 
 class DataFrameFormatter:

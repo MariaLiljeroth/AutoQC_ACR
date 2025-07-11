@@ -14,7 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from frontend.app import App
+from src.frontend.app import App
 
 # bool determining whether script is run from .exe (script frozen) or in IDE.
 frozen = getattr(sys, "frozen", False)

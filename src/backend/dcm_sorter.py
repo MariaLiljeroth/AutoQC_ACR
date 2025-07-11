@@ -11,8 +11,8 @@ Written by Nathan Crossley 2025
 from pathlib import Path
 import pydicom
 
-from shared.queueing import get_queue
-from backend.utils import quick_check_dicom
+from src.shared.queueing import get_queue
+from src.backend.utils import quick_check_dicom
 
 
 class DcmSorter:

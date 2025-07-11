@@ -14,13 +14,13 @@ import threading
 import tkinter as tk
 from tkinter import filedialog
 
-from shared.context import AVAILABLE_TASKS
-from shared.queueing import get_queue
+from src.shared.context import AVAILABLE_TASKS
+from src.shared.queueing import get_queue
 
-from frontend.settings import FONT_TEXT, FONT_TITLE
-from frontend.progress_bar_modal import ProgressBarModal
+from src.frontend.settings import FONT_TEXT, FONT_TITLE
+from src.frontend.progress_bar_modal import ProgressBarModal
 
-from backend.dcm_sorter import DcmSorter
+from src.backend.dcm_sorter import DcmSorter
 
 
 class FrameConfig(tk.Frame):

@@ -5,8 +5,8 @@ import inspect
 import numpy as np
 import pandas as pd
 
-from shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
-from shared.queueing import get_queue
+from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
+from src.shared.queueing import get_queue
 
 
 class DataFrameConstructor:

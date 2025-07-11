@@ -13,8 +13,8 @@ from typing import Self
 import numpy as np
 from skimage import measure
 
-from backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
-from backend.hazen.hazenlib.tasks.support_classes.series_xy import SeriesXY
+from src.backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
+from src.backend.hazen.hazenlib.tasks.support_classes.series_xy import SeriesXY
 
 
 class Line2D:

@@ -15,7 +15,7 @@ binaries = [
 ]
 
 a = Analysis(  # type: ignore
-    ["src/main.py"],
+    ["main.py"],
     pathex=[],
     binaries=binaries,
     datas=[],

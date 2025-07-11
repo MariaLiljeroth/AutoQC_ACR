@@ -18,8 +18,8 @@ from scipy.signal import find_peaks, medfilt
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
 
-from backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
-from backend.hazen.hazenlib.tasks.support_classes.series_xy import SeriesXY
+from src.backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
+from src.backend.hazen.hazenlib.tasks.support_classes.series_xy import SeriesXY
 
 
 class Line2DSliceThickness(Line2D):

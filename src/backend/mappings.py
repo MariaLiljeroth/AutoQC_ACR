@@ -8,12 +8,12 @@ Written by Nathan Crossley 2025
 
 """
 
-from backend.hazen.hazenlib.tasks.acr_slice_thickness import ACRSliceThickness
-from backend.hazen.hazenlib.tasks.acr_snr import ACRSNR
-from backend.hazen.hazenlib.tasks.acr_geometric_accuracy import ACRGeometricAccuracy
-from backend.hazen.hazenlib.tasks.acr_uniformity import ACRUniformity
-from backend.hazen.hazenlib.tasks.acr_spatial_resolution import ACRSpatialResolution
-from shared.context import AVAILABLE_TASKS
+from src.backend.hazen.hazenlib.tasks.acr_slice_thickness import ACRSliceThickness
+from src.backend.hazen.hazenlib.tasks.acr_snr import ACRSNR
+from src.backend.hazen.hazenlib.tasks.acr_geometric_accuracy import ACRGeometricAccuracy
+from src.backend.hazen.hazenlib.tasks.acr_uniformity import ACRUniformity
+from src.backend.hazen.hazenlib.tasks.acr_spatial_resolution import ACRSpatialResolution
+from src.shared.context import AVAILABLE_TASKS
 
 # Store classes in a list
 CLASSES = [

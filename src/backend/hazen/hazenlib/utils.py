@@ -7,7 +7,7 @@ import numpy as np
 import cv2 as cv
 from skimage import filters
 
-from backend.hazen.hazenlib import exceptions as exc
+from src.backend.hazen.hazenlib import exceptions as exc
 
 
 def GetDicomTag(dcm, tag):

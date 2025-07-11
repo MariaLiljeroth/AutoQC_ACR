@@ -15,13 +15,13 @@ from pathlib import Path
 import multiprocessing as mp
 from multiprocessing.managers import BaseProxy
 
-from backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
-from backend.hazen.hazenlib.utils import get_dicom_files
-from backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
-from backend.dev_settings import FORCE_SEQUENTIAL_PROCESSING
+from src.backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
+from src.backend.hazen.hazenlib.utils import get_dicom_files
+from src.backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
+from dev_settings import FORCE_SEQUENTIAL_PROCESSING
 
-from shared.queueing import get_queue
-from shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
+from src.shared.queueing import get_queue
+from src.shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
 
 
 def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]):

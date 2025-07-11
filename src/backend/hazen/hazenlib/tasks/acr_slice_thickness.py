@@ -19,13 +19,15 @@ import cv2
 import matplotlib.pyplot as plt
 from pydicom import Dataset
 
-from backend.hazen.hazenlib.HazenTask import HazenTask
-from backend.hazen.hazenlib.ACRObject import ACRObject
-from backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
-from backend.hazen.hazenlib.masking_tools.contour_validation import ContourValidation
-from backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
-from backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
-from backend.hazen.hazenlib.tasks.support_classes.line_2d_slice_thickness import (
+from src.backend.hazen.hazenlib.HazenTask import HazenTask
+from src.backend.hazen.hazenlib.ACRObject import ACRObject
+from src.backend.hazen.hazenlib.masking_tools.slice_mask import SliceMask
+from src.backend.hazen.hazenlib.masking_tools.contour_validation import (
+    ContourValidation,
+)
+from src.backend.hazen.hazenlib.tasks.support_classes.point_2d import Point2D
+from src.backend.hazen.hazenlib.tasks.support_classes.line_2d import Line2D
+from src.backend.hazen.hazenlib.tasks.support_classes.line_2d_slice_thickness import (
     Line2DSliceThickness,
 )
 
