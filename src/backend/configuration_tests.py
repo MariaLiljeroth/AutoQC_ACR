@@ -69,7 +69,7 @@ def file_structure_problems_exist(
     # construct phrase informing user that some helper data sets are missing, where they are required.
     if len(subdirs_helper_missing_err) != 0:
         plural_helper_missing = len(subdirs_helper_missing_err) > 1
-        helper_missing_phrase = f"Tried to implement SNR by subtraction for director{'ies' if plural_helper_missing else 'y'} {', '.join(subdirs_helper_missing_err)} but did not find helper data set{'s' if plural_helper_missing else ''}!"
+        helper_missing_phrase = f"Tried to implement SNR by subtraction for director{'ies' if plural_helper_missing else 'y'} {', '.join(subdirs_helper_missing_err)} but could not find helper data set{'s' if plural_helper_missing else ''}!"
     else:
         helper_missing_phrase = ""
 
