@@ -35,7 +35,7 @@ class ContourValidation:
     """
 
     def __init__(self, source_image: np.ndarray):
-        """Initialise ContourValidation class, storing image that contours
+        """Initialise ContourValidation class, storing the image that contours
         are to be sourced from as an instance attribute, for convenience.
 
         Args:
@@ -50,15 +50,17 @@ class ContourValidation:
         contour to the phantom edge. Various contour properties are used with
         different weights to calculate this score.
 
-        Property checks:
+        Required tests:
             centre_x_hull_ratio: Checks that the convex hull centre-x is approximately in the centre of the image.
             centre_y_hull_ratio: Checks that the convex hull centre-y is approximately in the centre of the image.
-            area_ratio: Checks that the contour area is approximately as expected.
-            circularity: Checks that the circularity of the contour is approximately unity. Useful for
-                detecting whether the contour is approximately circular and also for rejecting noisy edges that
-                are not yet fully formed in the dynamic thresholding process.
-            smoothness_ratio: Checks that the smoothness of the contour is low enough to be accepted. Smoothness
-                measure determined by ratio of contour and DP polygon perimeters.
+            area_ratio: Checks that the ratio between the contour area and the image size is approximately as expected for the ACR phantom.
+            circularity: Checks that the contour is "circular" enough.
+
+        Scored tests:
+            background_area_ratio: Calculates the ratio of the area not within the contour (the "background") and the image size.
+                Rewards maximising the background area - to shrink the contour as much as possible during dynamic thresholding so its a tight fit around the ACR phantom edge.
+            smoothness_ratio: Calculates the ratio between the contour perimeter and a polygon approximation's perimeter (Douglas-Pecker).
+                Rewards maximising smoothness ratio to reject unnecessarily noisy contours.
 
         Args:
             contour (np.ndarray): A detected contour from cv2.findContours.
@@ -90,18 +92,23 @@ class ContourValidation:
                     "tolerance": 0.1,
                     "test_value": None,
                 },
-            },
-            "scored": {
                 "circularity": {
                     "ground_truth": 1,
                     "tolerance": 0.1,
-                    "weight": 0.5,
+                    "test_value": None,
+                },
+            },
+            "scored": {
+                "background_area_ratio": {
+                    "ground_truth": 1,
+                    "tolerance": 1,
+                    "weight": 3 / 4,
                     "test_value": None,
                 },
                 "smoothness_ratio": {
                     "ground_truth": 1,
                     "tolerance": 0.2,
-                    "weight": 0.5,
+                    "weight": 1 / 4,
                     "test_value": None,
                 },
             },
@@ -132,7 +139,8 @@ class ContourValidation:
             "test_value"
         ] = centre_y_hull_ratio
         tests_to_run["required"]["area_ratio"]["test_value"] = area_ratio
-        tests_to_run["scored"]["circularity"]["test_value"] = circularity
+        tests_to_run["required"]["circularity"]["test_value"] = circularity
+        tests_to_run["scored"]["background_area_ratio"]["test_value"] = 1 - area_ratio
         tests_to_run["scored"]["smoothness_ratio"]["test_value"] = smoothness_ratio
 
         # run tests outlined in dict to get similarity score
@@ -145,14 +153,18 @@ class ContourValidation:
         contour to the slice thickness insert. Various contour properties
         are used with different weights to calculate this score.
 
-        Property checks:
-            width_bbox_ratio: Comparing the contour's bounding box width to the insert's expected width.
-            height_bbox_ratio: Comparing the contour's bounding box height to the insert's expected height.
-            smoothness_ratio: Checks that the smoothness of the contour is low enough to be accepted. Smoothness
-                measure determined by ratio of contour and DP polygon perimeters.
-            turning_angle_ratio: Checks that the ratio of the contour's total turning angle and 360 degrees is close
-                to unity. The total turning angle is the total angular deviation across the length of a Douglas Pecker
-                polygon approximation of the contour.
+        Required tests:
+            width_bbox_ratio: Checks that the contour's bounding box width is approximately equal to the insert's expected width.
+            height_bbox_ratio: Checks that the contour's bounding box height is approximately equal to the insert's expected height.
+
+        Scored tests:
+            smoothness_ratio: Calculates the ratio between the contour perimeter and a polygon approximation's perimeter (Douglas-Pecker).
+                Rewards maximising smoothness ratio to reject unnecessarily noisy contours.
+            turning_angle_ratio: Calculates the ratio of the contour's total turning angle and 360 degrees.
+                The total turning angle is the total angular deviation across the length of a Douglas Pecker
+                polygon approximation of the contour. Rewards minimising the total turning angle.
+            extent: Calculates how much the contour fills up its bounding box through a ratio of areas.
+                Rewards similarity in area.
 
         Args:
             contour (np.ndarray): A detected contour from cv2.findContours.
@@ -183,12 +195,18 @@ class ContourValidation:
                 "smoothness_ratio": {
                     "ground_truth": 1,
                     "tolerance": 0.2,
-                    "weight": 0.5,
+                    "weight": 0.25,
                     "test_value": None,
                 },
                 "turning_angle_ratio": {
                     "ground_truth": 1,
                     "tolerance": 0.2,
+                    "weight": 0.25,
+                    "test_value": None,
+                },
+                "extent": {
+                    "ground_truth": 1,
+                    "tolerance": 0.1,
                     "weight": 0.5,
                     "test_value": None,
                 },
@@ -196,6 +214,7 @@ class ContourValidation:
         }
 
         # get properties of true contour
+        area_contour = cv2.contourArea(contour)
         turning_angle_ratio = self.get_turning_angle_ratio(contour)
         smoothness_ratio = self.get_smoothness_ratio(contour)
 
@@ -205,6 +224,7 @@ class ContourValidation:
             width_bbox, height_bbox = height_bbox, width_bbox
         width_bbox_ratio = width_bbox / cols
         height_bbox_ratio = height_bbox / rows
+        extent = area_contour / (width_bbox * height_bbox + 1e-10)
 
         # append test values to dict
         tests_to_run["required"]["width_bbox_ratio"]["test_value"] = width_bbox_ratio
@@ -213,6 +233,7 @@ class ContourValidation:
         tests_to_run["scored"]["turning_angle_ratio"][
             "test_value"
         ] = turning_angle_ratio
+        tests_to_run["scored"]["extent"]["test_value"] = extent
 
         # run tests outlined in dict to get similarity score
         score = self.run_tests(tests_to_run)

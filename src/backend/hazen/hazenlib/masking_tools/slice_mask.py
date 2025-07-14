@@ -2,16 +2,16 @@
 slice_mask.py
 
 This script defines a custom np.ndarray subclass SliceMask, to represent the binary mask of a given slice of the ACR phantom.
-The mask is obtained by iteratively testing for the presence of the phantom edge with a dynamically increasing pixel threshold.
-An additional contour checking function can be passed to the class when instantiating so that the dynamic thresholding also
-continues until this contour is found and its similarity score no longer is increasing. Additional mask-related utility functions
-are also included in this class.
+The mask is obtained by iteratively testing for the presence of the phantom edge (and optionally an additional contour) with
+a dynamically increasing pixel threshold. Contour presence is scored and an optimal thresholding value is obtained, where all contours
+are clearly visible, through analysing score profiles. Additional mask-related utility functions are also included in this class.
 
 Written by Nathan Crossley 2025
 
 """
 
 import numpy as np
+import numbers
 import cv2
 from typing import Self, Type, Callable
 from skimage.restoration import estimate_sigma
@@ -22,6 +22,10 @@ class SliceMask(np.ndarray):
     The binary mask is obtained by dynamically testing an increasing threshold value, searching
     for the presence of expected contours.
     """
+
+    COARSE_SPACING = 20
+    EIGHT_BIT_MIN = 0
+    EIGHT_BIT_MAX = 255
 
     def __new__(
         cls,
@@ -39,7 +43,7 @@ class SliceMask(np.ndarray):
                 on the similarity between passed contour and a secondary expected contour. Defaults to None.
 
         Returns:
-            Self: Object of self!
+            Self: Object of self.
         """
 
         # get binary mask of image by dynamic thresholding and retaining contours
@@ -89,10 +93,12 @@ class SliceMask(np.ndarray):
         secondary_contour_scorer: Callable = None,
     ) -> tuple[np.ndarray]:
         """Dynamically thresholds an input image based on passed
-        contour detection functions. Presence of phantom edge is used
-        as a primary indication to cease thresholding. Presence of
-        secondary, user defined contour is used to cease thresholding if
-        provided, once the contour is optimally defined.
+        contour detection functions. Searches for the presence of the
+        phantom edge and optionally the presence of a user defined contour.
+        Contour presence is scored for both and an optimal thresholding value
+        is obtained, where all contours are clearly visible, through analysing
+        score profiles.
+
 
         Args:
             cls (Type[Self]): class of Self
@@ -109,82 +115,93 @@ class SliceMask(np.ndarray):
         # preprocess image before thresholding
         image_preprocessed = cls._preprocess_image(image)
 
-        # set the dynamic threshold to low start value
-        dynamic_thresh = 4
+        # get coarse score profile for phantom edge as needed for both scenarios below
+        coarse_grid_PE, scores_PE = cls._get_score_profile(
+            image_preprocessed,
+            phantom_edge_scorer,
+            cls.EIGHT_BIT_MIN,
+            cls.EIGHT_BIT_MAX,
+            cls.COARSE_SPACING,
+        )
 
-        # dynamically increase threshold whilst still within 8bit range
-        while dynamic_thresh <= 255:
+        # if only phantom edge is important
+        if secondary_contour_scorer is None:
 
-            # select scorer functions used to test contour presence in this first step
-            # here we want to test to see if phantom edge and secondary contour are both present,
-            # as this is required for successful thresholding
-            scorers = [
-                scorer
-                for scorer in [phantom_edge_scorer, secondary_contour_scorer]
-                if scorer is not None
-            ]
+            # get the maximum score for phantom edge scores
+            max_score_idx = np.argmax(scores_PE)
 
-            # get mask and contours for a particular threshold of preprocessed image
-            # get similiary scores associated with phantom edge and secondary contour
-            scores, contours, mask = cls._test_contour_presence(
-                image_preprocessed, dynamic_thresh, scorers
+            # finely resample scores about the maximum in the coarse profile for more accurate global maximum detection
+            fine_grid_PE, refined_scores_PE = cls._finely_sample_scores(
+                image_preprocessed, phantom_edge_scorer, coarse_grid_PE, max_score_idx
             )
 
-            # if both the phantom edge and secondary contour are present, scores both non-zero
-            if all([score != 0 for score in scores]):
+            # get optimal thresh from max of finely sampled score profile.
+            optimal_thresh = cls._get_middle_max_thresh(fine_grid_PE, refined_scores_PE)
 
-                # if user doesn't want to search for a secondary contour, stop optimisation here
-                if len(scores) == 1:
-                    return mask, contours
+            # get mask and contours at threshold to return
+            mask, contours = cls._threshold_for_mask_and_contours(
+                image_preprocessed, optimal_thresh
+            )
 
-                # if user does want to search for a secondary contour, then keep increasing threshold
-                # until further increases reduces similarity score.
-                elif len(scores) == 2:
+            return mask, contours
 
-                    # store best found similarity scores, mask and associated contours
-                    best_secondary_score = scores[1]
-                    best_mask = mask
-                    best_contours = contours
+        # if a secondary contour is also relevant
+        else:
 
-                    # define thresholding step for this final optimisation step
-                    threshold_step = 2
+            # get coarse score profile for that secondary contour
+            _, scores_secondary = cls._get_score_profile(
+                image_preprocessed,
+                secondary_contour_scorer,
+                cls.EIGHT_BIT_MIN,
+                cls.EIGHT_BIT_MAX,
+                cls.COARSE_SPACING,
+            )
 
-                    while dynamic_thresh + threshold_step <= 255:
+            # get a score profile from the product of scores
+            product_scores = [x * y for x, y in zip(scores_PE, scores_secondary)]
 
-                        # increase dynamic threshold
-                        dynamic_thresh += threshold_step
+            # if all values in product score profile are zero, indicates that both contours
+            # couldn't be found simultaneously at one threshold.
+            if all([x for x in product_scores if x == 0]):
+                raise ValueError(
+                    "A common threshold does not exist where both the phantom edge and additional contour are both visible."
+                )
 
-                        # get score for secondary contour for newly increased dynamic threshold
-                        new_scores, new_contours, new_mask = cls._test_contour_presence(
-                            image_preprocessed,
-                            dynamic_thresh,
-                            [secondary_contour_scorer],
-                        )
+            # get max of coarse product profile
+            max_score_idx = np.argmax(product_scores)
 
-                        # scores is a 1-element list
-                        new_secondary_score = new_scores[0]
+            # finely resample phantom edge score profile about max of product profile
+            fine_grid_PE, refined_scores_PE = cls._finely_sample_scores(
+                image_preprocessed,
+                phantom_edge_scorer,
+                coarse_grid_PE,
+                max_score_idx,
+            )
 
-                        # If new second score improves, store it
-                        plateau_tolerance = 1e-3
-                        if (
-                            new_secondary_score
-                            > best_secondary_score + plateau_tolerance
-                        ):
-                            best_secondary_score = new_secondary_score
-                            best_mask = new_mask
-                            best_contours = new_contours
+            # finely resample secondary contour score profile about max of product profile
+            _, refined_scores_secondary = cls._finely_sample_scores(
+                image_preprocessed,
+                secondary_contour_scorer,
+                coarse_grid_PE,
+                max_score_idx,
+            )
 
-                        # score stopped increasing so return best values
-                        else:
-                            break
+            # get resampled product profile by multiplication
+            refined_scores_product = [
+                x * y for x, y in zip(refined_scores_PE, refined_scores_secondary)
+            ]
 
-                    return best_mask, best_contours
+            # get optimal thresh from max of finely sampled product profile
+            optimal_thresh = cls._get_middle_max_thresh(
+                fine_grid_PE, refined_scores_product
+            )
 
-            # increment dynamic thresh by small amount
-            dynamic_thresh += 2
+            # get mask and contours at threshold for return
+            mask, contours = cls._threshold_for_mask_and_contours(
+                image_preprocessed, optimal_thresh
+            )
 
-        # Raise an error if dynamic thresh goes outside 8bit range because required contours not detected
-        raise ValueError("Expected phantom features not detected in mask creation!")
+            return mask, contours
 
     @staticmethod
     def _preprocess_image(image: np.ndarray) -> np.ndarray:
@@ -227,35 +244,172 @@ class SliceMask(np.ndarray):
         return image_denoised
 
     @staticmethod
-    def _test_contour_presence(
-        image: np.ndarray, thresh: int, contour_scorers: list[Callable]
-    ) -> tuple[list[float], np.ndarray, np.ndarray]:
-        """Tests the presence of contours by evaluating any contour
-        scorer functions passed by user, for each detected contour.
-        Maximum similarity score returned for each function.
+    def _score_contour_presence(
+        image: np.ndarray,
+        thresh: int | list[int],
+        contour_scorer: Callable,
+    ) -> float | list[float]:
+        """Scores presence of a particular within a mask of a passed image,
+        using a particular thresholding value. If multiple thresholds are passed,
+        multiple corresponding cores are returned.
+
+        Args:
+            image (np.ndarray): Passed image to create mask from.
+            thresh (int | list[int]): Threshold value(s) to create mask(s) from
+            contour_scorer (Callable): Callable function to score a particular contour
+                on its similarity to expected contour.
+
+        Returns:
+            float | list[float]: Calculated score(s)
+        """
+
+        # Always treat thresh as list. Store bool to indicate whether single thresh value was passed.
+        is_single = isinstance(thresh, numbers.Integral)
+        thresh_list = [thresh] if is_single else thresh
+
+        # for each threshold value, take mask, find contours and append score. Appended score is the highest
+        # score obtained across all contours in the mask
+        scores = []
+        for val in thresh_list:
+            mask = cv2.threshold(image, val, 255, cv2.THRESH_BINARY)[1]
+            contours = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
+            score = max((contour_scorer(c) for c in contours), default=0)
+            scores.append(score)
+
+        # Return single value if input was a single int
+        if is_single:
+            return scores[0]
+
+        # else return all scores.
+        else:
+            return scores
+
+    @classmethod
+    def _get_score_profile(
+        cls,
+        image: np.ndarray,
+        contour_scorer: Callable,
+        pixel_value_start: int,
+        pixel_value_end: int,
+        grid_spacing: int = None,
+    ) -> tuple[np.ndarray, list]:
+        """Returns a "score profile" for a particular image, for a particular contour scorer,
+        for a particular range of pixel values. A score profile is a list of calculated contour
+        presence scores, for a range of user specified threshold pixel values.
 
         Args:
             image (np.ndarray): Image to threshold for mask.
-            thresh (int): Thresholding value used for mask creation.
-            contour_scorers (list[Callable]): list of contour scorer functions,
-                used to extract similarity scores from contours.
+            contour_scorer (Callable): Contour scoring function to use.
+            pixel_value_start (int): Start of range of pixel value thresholds.
+            pixel_value_end (int): End of range of pixel value thresholds.
+            grid_spacing (int, optional): Specifies a particular step in pixel values. Defaults to None.
+                If None, a pixel value spacing of 1 is assumed (no reduced sampling rate).
 
         Returns:
-            tuple[list[float], np.ndarray, np.ndarray]: evaluated best scores for
-              scorer functions, used contours and used mask.
-
+            tuple[np.ndarray, list]: Sampling pixel value grid used and calculated score profile.
         """
 
-        # threshold mask using thresholding value supplied
+        # Construct grid of pixel values to test
+        # If grid spacing not provided, assume to be unity.
+        if grid_spacing is None:
+            grid = np.arange(pixel_value_start, pixel_value_end)
+
+        # Else use specific spacing.
+        else:
+            grid = np.linspace(
+                pixel_value_start, pixel_value_end, grid_spacing, dtype=int
+            )
+
+        # get scores for each pixel value in grid
+        score_profile = cls._score_contour_presence(image, grid, contour_scorer)
+
+        # if all scores zero, contour not detected, so throw error
+        if max(score_profile) == 0:
+            raise ValueError(
+                f"The contour that you are searching for with function '{contour_scorer.__name__}' does not exist on this slice!"
+            )
+
+        return grid, score_profile
+
+    @classmethod
+    def _finely_sample_scores(
+        cls,
+        image: np.ndarray,
+        contour_scorer: Callable,
+        coarse_grid: np.ndarray,
+        centre_idx_grid: int,
+    ) -> tuple[np.ndarray, list]:
+        """Finely resampled score profile for a particular contour scorer around
+        a particular idx (range is -1 to +1).
+
+        Args:
+            image (np.ndarray): The image used to create masks.
+            contour_scorer (Callable): The contour scorer used to create finely sampled score profile.
+            coarse_grid (np.ndarray): Grid used for course sampling (full of coarsely sampled pixel values).
+            centre_idx_grid (int): Index of coarse_grid about which to construct finely sampled pixel array.
+
+        Returns:
+            tuple[np.ndarray, list]: Finely sampled grid and associated scores.
+        """
+
+        # Select start pixel value for finely sampled grid as centre index - 1 (accounting for boundary conditions)
+        fine_grid_start = coarse_grid[max(centre_idx_grid - 1, 0)]
+
+        # Select end pixel value for finely sampled grid as centre index + 1 (accounting for boundary conditions)
+        fine_grid_end = coarse_grid[min(centre_idx_grid + 1, len(coarse_grid) - 1)]
+
+        # get new finely sampled score profile
+        fine_grid, refined_scores = cls._get_score_profile(
+            image, contour_scorer, fine_grid_start, fine_grid_end
+        )
+
+        return fine_grid, refined_scores
+
+    @staticmethod
+    def _threshold_for_mask_and_contours(
+        image: np.ndarray, thresh: int
+    ) -> tuple[np.ndarray]:
+        """Returns the input image, thresholded at a particular pixel value,
+        and its associated contours.
+
+        Args:
+            image (np.ndarray): Image to threshold into mask.
+            thresh (int): Value to use for thresholding.
+
+        Returns:
+            tuple[np.ndarray]: Binary mask and associated detected contours.
+        """
+
+        # get mask at particualr threshold value
         _, mask = cv2.threshold(image, thresh, 255, cv2.THRESH_BINARY)
 
-        # get contours of mask, simplifying with CHAIN_APPROX_SIMPLE
+        # get associated contours
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        # get highest scores evaluated for each contour scorer function
-        scores = [max([scorer(c) for c in contours]) for scorer in contour_scorers]
+        return mask, contours
 
-        return scores, contours, mask
+    @staticmethod
+    def _get_middle_max_thresh(grid: np.ndarray, scores: list) -> float:
+        """Gets the optimal thresholding value from a score profile
+        by selecting the threshold associated with the middle value
+        from array of maximum values.
+
+        Args:
+            grid (np.ndarray): Grid of pixel values.
+            scores (list): Scores associated with pixel values.
+
+        Returns:
+            float: Optimal threshold.
+        """
+
+        # get maximum score and indices where score is maximum
+        max_val = np.max(scores)
+        max_indices = np.where(scores == max_val)[0]
+
+        # extract middle value from array
+        middle_max_idx = max_indices[len(max_indices) // 2]
+
+        return grid[middle_max_idx]
 
     def _get_elliptical_mask(self) -> tuple[np.ndarray, tuple[float, float], float]:
         """Fits an ellipse to the phantom edge, creates elliptical mask and
