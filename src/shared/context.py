@@ -23,3 +23,6 @@ EXPECTED_ORIENTATIONS = ["Ax", "Sag", "Cor"]
 
 # The expected coils tested.
 EXPECTED_COILS = ["IB", "HN", "Flex"]
+
+# The manufacturers available for testing.
+IMPLEMENTED_MANUFACTURERS = ["Siemens", "Philips", "GE", "Canon"]

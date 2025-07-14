@@ -11,6 +11,7 @@ Written by Nathan Crossley 2025
 """
 
 from pathlib import Path
+import pydicom
 
 import multiprocessing as mp
 from multiprocessing.managers import BaseProxy
@@ -21,7 +22,11 @@ from src.backend.utils import nested_dict, defaultdict_to_dict, substring_matche
 from dev_settings import FORCE_SEQUENTIAL_PROCESSING
 
 from src.shared.queueing import get_queue
-from src.shared.context import EXPECTED_ORIENTATIONS, EXPECTED_COILS
+from src.shared.context import (
+    EXPECTED_ORIENTATIONS,
+    EXPECTED_COILS,
+    IMPLEMENTED_MANUFACTURERS,
+)
 
 
 def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]):
@@ -79,13 +84,13 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
     # Run with either parallelism or serial processing based on number of workers
     if num_workers > 1:
 
-        # create multiprocessing pool, running solo task running func with job arguments
+        # create multiprocessing pool, running job running func with job arguments
         with mp.Pool(processes=num_workers) as pool:
-            results = pool.starmap(run_solo_task_on_folder, job_args)
+            results = pool.starmap(run_job, job_args)
 
     else:
         # run tasks serially (no multiprocessing)
-        results = [run_solo_task_on_folder(*args) for args in job_args]
+        results = [run_job(*args) for args in job_args]
 
     # Format results in nested dictionary structure (for clarity and ease of dataframe construction)
     formatted_results = format_results(results)
@@ -94,7 +99,7 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
     get_queue().put(("TASK_COMPLETE", "TASK_RUNNING", formatted_results))
 
 
-def run_solo_task_on_folder(
+def run_job(
     in_subdir: Path, out_subdir: Path, task: str, queue: BaseProxy, perc: float
 ) -> dict:
     """Runs a single job for a specific set of input args from job_args.
@@ -131,10 +136,12 @@ def run_solo_task_on_folder(
         queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
         return None
 
-    # if helper_data_set exists, pass its path to "subtract" kwarg, to enable SNR by subtraction
-    snr_helper = in_subdir / "helper_data_set"
-    if task == "SNR" and snr_helper.exists():
-        kwargs["subtract"] = snr_helper
+    # if Philips scanner and SNR task called, pass helper data set to task class through subtract kwarg
+    helper_data_set = in_subdir / "helper_data_set"
+    manufacturer_tag = pydicom.dcmread(kwargs["input_data"][0]).get("Manufacturer")
+    manufacturer = substring_matcher(manufacturer_tag, IMPLEMENTED_MANUFACTURERS)
+    if task == "SNR" and manufacturer == "Philips":
+        kwargs["subtract"] = helper_data_set
 
     # map task string to associated class and instantiate, passing kwargs
     task_obj = TASK_STR_TO_CLASS[task](**kwargs)

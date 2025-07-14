@@ -21,6 +21,7 @@ from src.frontend.settings import FONT_TEXT, FONT_TITLE
 from src.frontend.progress_bar_modal import ProgressBarModal
 
 from src.backend.dcm_sorter import DcmSorter
+from src.backend.configuration_tests import file_structure_problems_exist
 
 
 class FrameConfig(tk.Frame):
@@ -436,6 +437,10 @@ class FrameConfig(tk.Frame):
 
         # construct tuple of args to pass to taskrunner frame
         args_to_pass = (in_dir, out_dir, in_subdirs, out_subdirs, tasks_to_run)
+
+        # check file structure before running
+        if file_structure_problems_exist(in_subdirs, tasks_to_run):
+            return
 
         # signal a switch to taskrunner frame and pass args
         get_queue().put(("SWITCH_FRAME", "TASKRUNNER", args_to_pass))
