@@ -2,9 +2,7 @@
 .vscode/
 build/
 dist/
-docs/
-report_image/
-validation/
+test_data/
 
 *.xlsx
 *.pyc
