@@ -5,6 +5,8 @@ This script pulls the pysintaller .spec file, which details the specifics of the
 When the script is run, the user is prompted to enter a version number for the build. The suggested version number convention
 is MAJOR.MINOR.REVISION.(BUILD), as is standard. The bundled project will be available in dist/
 
+Written by Nathan Crossley, 2025.
+
 """
 
 import subprocess
