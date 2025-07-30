@@ -2,9 +2,9 @@
 app.py
 
 This script defines the App class.
-App inherits from tk.Tk and acts as the toplevel root window for the frame-based GUI application.
-App can swap what its displaying by switching the currently displayed tk.Frame subclass.
-Frame swapping and other triggers are initiatied through the global multiprocessing queue.
+App inherits from tk.Tk and acts as the toplevel root window for the page-based GUI application.
+App can swap what its displaying by switching the currently displayed tk.Frame subclass (page).
+Page swapping and other triggers are initiatied through the global multiprocessing queue.
 
 Written by Nathan Crossley 2025
 
@@ -19,28 +19,29 @@ from tkinter import messagebox
 from queue import Empty
 from src.shared.queueing import get_queue
 
-from src.frontend.frames.frame_config import FrameConfig
-from src.frontend.frames.frame_task_runner import FrameTaskRunner
+from src.frontend.app_state import AppState
+from src.frontend.pages.page_config import PageConfig
+from src.frontend.pages.page_task_runner import PageTaskRunner
 
 
 class App(tk.Tk):
     """Centralised frontend app class for AutoQC_ACR.
-    GUI works through switching subclasses of tk.Frame
+    GUI works through switching subclasses of tk.Frame (pages)
     """
 
-    # Padding around the edge of displayed frames.
-    PAD_FRAME = 20
+    # Padding around the edge of displayed pages.
+    PAD_PAGE = 20
 
-    # Maps the names of frames to their associated tk.Frame subclasses.
-    FRAME_MAP = dict(zip(["CONFIG", "TASKRUNNER"], [FrameConfig, FrameTaskRunner]))
+    # Maps the names of pages to their associated page subclasses.
+    PAGE_MAP = dict(zip(["CONFIG", "TASKRUNNER"], [PageConfig, PageTaskRunner]))
 
     def __init__(self):
-        """Initialises the App class, displays configuration frame
+        """Initialises the App class, displays configuration page
         and initialises queue checking.
 
         Instance attributes:
-            frames (dict): Dictionary of frame instances. Frame names are mapped directly to existing instances of associated tk.Frame subclasses.
-            current_frame (tk.Frame): Currently displayed frame.
+            pages (dict): Dictionary of page instances. Page names are mapped directly to existing instances of associated page classes.
+            current_page (tk.Frame): Currently displayed page.
         """
 
         # Set properites of self (tk.Tk)
@@ -48,63 +49,62 @@ class App(tk.Tk):
         self.geometry(f"+5+5")
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.title("AutoQC_ACR")
+        self.app_state = AppState()
 
-        # Initialise dictionary of frame name -> instance mappings.
-        self.frames = {}
+        # Initialise dictionary of page name -> instance mappings.
+        self.pages = {}
 
-        # To begin with, show configuration frame.
-        self.show_frame(FrameConfig)
+        # To begin with, show configuration page.
+        self.show_page(PageConfig)
 
         # Initialise queue checking.
         self._check_queue()
 
-    def show_frame(self, frame_class: tk.Frame, *args_to_pass: any):
-        """Takes a tk.Frame subclass and checks whether an instance
-        already exists in self.frames. If it exists, GUI displays this frame.
-        Otherwise, an instance of the frame is created and displayed.
+    def show_page(self, page_class: tk.Frame, *args_to_pass: any):
+        """Takes a tk.Frame subclass (a page) and checks whether an instance
+        already exists in self.pages. If it exists, GUI displays this page.
+        Otherwise, an instance of the page is created and displayed.
 
         Args:
-            frame_class (tk.Frame): Frame to display.
-            args_to_pass(any): Additional arguments to pass to the frame when switching.
+            page_class (tk.Frame): Page to display.
+            args_to_pass(any): Additional arguments to pass to the page when switching.
         """
 
-        # Set self to be resizible so can adjust to fit dimensions of newly swapped in frame.
+        # Set self to be resizible so can adjust to fit dimensions of newly swapped in page.
         self.resizable(True, True)
 
-        # Get class name of frame that is trying to be swapped in
-        frame_name = frame_class.__name__
+        # Get class name of page that is trying to be swapped in
+        page_name = page_class.__name__
 
-        # If instance of that particular frame class does not exist in self.frames, instance is created and displayed.
-        if frame_name not in self.frames:
+        # If instance of that particular page class does not exist in self.pages, instance is created and displayed.
+        if page_name not in self.pages:
 
-            # Create instance of frame class that is trying to be swapped in
-            frame = frame_class(self, *args_to_pass)
+            # Create instance of page class that is trying to be swapped in
+            page = page_class(self, *args_to_pass)
 
-            # Track newly created instance in self.frames.
-            self.frames[frame_name] = frame
+            # Track newly created instance in self.pages.
+            self.pages[page_name] = page
 
             # Pack instance into self with padding.
-            frame.pack(
-                fill=tk.BOTH, expand=True, padx=self.PAD_FRAME, pady=self.PAD_FRAME
-            )
-            if hasattr(self, "current_frame"):
-                self.current_frame.pack_forget()
+            page.pack(fill=tk.BOTH, expand=True, padx=self.PAD_PAGE, pady=self.PAD_PAGE)
+            if hasattr(self, "current_page"):
+                self.current_page.pack_forget()
 
         else:
-            frame = self.frames[frame_name]
+            page = self.pages[page_name]
 
-        # Set current_frame attribute to newly swapped in frame.
-        self.current_frame = frame
+        # Set current_page attribute to newly swapped in page.
+        self.current_page = page
 
-        # Raise newly swapped in frame to be on top of others.
-        self.after(50, frame.tkraise)
+        # Raise newly swapped in page to be on top of others.
+        self.after(50, page.tkraise)
 
-        # Lock dimensions of self now that newly swapped in frame has expanded.
+        # Lock dimensions of self now that newly swapped in page has expanded.
         self.after(100, lambda: self.resizable(False, False))
 
     def _check_queue(self):
         """Initialises queue checking for events. App-level events are immediately handled.
-        Otherwise, event is passed to self.current_frame for local processing within that object.
+        Otherwise, event is passed to self.current_page for local processing within that object.
         """
 
         # Try and get event message in queue
@@ -114,23 +114,23 @@ class App(tk.Tk):
                 # Get event message
                 event = get_queue().get_nowait()
 
-                # Handles frame switching event. Additional args can be pased from caller frame to new frame through event[2].
-                if event[0] == "SWITCH_FRAME":
+                # Handles page switching event. Additional args can be pased from caller page to new page through event[2].
+                if event[0] == "SWITCH_PAGE":
 
-                    # Get name of frame to swap in.
-                    frame_name = event[1]
+                    # Get name of page to swap in.
+                    page_name = event[1]
 
-                    # Get args to pass to new frame.
+                    # Get args to pass to new page.
                     if len(event) >= 3:
                         args_to_pass = event[2]
                     else:
                         args_to_pass = []
 
-                    # Get class associated with new frame's name
-                    frame_class = self.FRAME_MAP[frame_name]
+                    # Get class associated with new page's name
+                    page_class = self.PAGE_MAP[page_name]
 
-                    # Swap in new frame.
-                    self.show_frame(frame_class, *args_to_pass)
+                    # Swap in new page.
+                    self.show_page(page_class, *args_to_pass)
 
                 # Handles application quitting event and end of AutoQC_ACR runtime.
                 elif event[0] == "QUIT_APPLICATION":
@@ -142,9 +142,9 @@ class App(tk.Tk):
                     self.destroy()
                     sys.exit()
 
-                # Other events passed down to current visible frame, to be handled locally (event not relevant for here) due to separation of concerns.
+                # Other events passed down to current visible page, to be handled locally (event not relevant for here) due to separation of concerns.
                 else:
-                    self.current_frame.handle_event(event)
+                    self.current_page.handle_event(event)
 
         # Pass if queue has no message
         except Empty:

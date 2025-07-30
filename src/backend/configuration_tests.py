@@ -25,8 +25,8 @@ def file_structure_problems_exist(
     running process can then be cancelled.
 
     Args:
-        in_subdirs (list[Path]): List of input subdirectories taken from GUI configuration frame.
-        tasks_to_run (list[str]): List of Hazen tasks to run, taken from GUI configuration frame.
+        in_subdirs (list[Path]): List of input subdirectories taken from GUI configuration page.
+        tasks_to_run (list[str]): List of Hazen tasks to run, taken from GUI configuration page.
 
     Returns:
         str: String error to be displayed to the user.

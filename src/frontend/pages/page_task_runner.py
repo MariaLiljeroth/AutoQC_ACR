@@ -1,8 +1,8 @@
 """
-frame_task_runner.py
+page_task_runner.py
 
-This file defines the FrameTaskRunner class, which is a tk.Frame subclass that shows the progress of
-the running of hazen tasks in the backend. Is swapped in from configuration frame and is currently the final frame.
+This file defines the PageTaskRunner class, which is a tk.Frame subclass that shows the progress of
+the running of hazen tasks in the backend. Is swapped in from configuration page and is currently the final page.
 
 Written by Nathan Crossley 2025
 
@@ -23,7 +23,7 @@ from src.backend.dataframe_tools.dataframe_formatter import DataFrameFormatter
 from src.shared.queueing import get_queue
 
 
-class FrameTaskRunner(tk.Frame):
+class PageTaskRunner(tk.Frame):
     """Subclass of tk.Frame
     Used to display to user the progress of Hazen tasks running in the backend.
 
@@ -59,7 +59,7 @@ class FrameTaskRunner(tk.Frame):
         out_subdirs: list[Path],
         tasks_to_run: list[str],
     ):
-        """Initialises FrameTaskRunner.
+        """Initialises PageTaskRunner.
 
         Args:
             master (tk.Tk): Root window of the application.
@@ -84,7 +84,7 @@ class FrameTaskRunner(tk.Frame):
         self._layout_widgets()
         self._configure_grid()
 
-        # triggers task running process after frame is initialised
+        # triggers task running process after page is initialised
         self._trigger_task_running()
 
     def _create_widgets(self):

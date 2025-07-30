@@ -12,3 +12,7 @@ FONT_TEXT = ("Segoe UI", 11)
 
 # Defines the font and size for titles.
 FONT_TITLE = ("Segoe UI", 14, "bold", "underline")
+
+PAD_SMALL = 5
+PAD_MEDIUM = 10
+PAD_LARGE = 15
