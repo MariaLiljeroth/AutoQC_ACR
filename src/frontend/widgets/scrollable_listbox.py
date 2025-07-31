@@ -25,6 +25,7 @@ class ScrollableListbox(tk.Frame):
             "font": FONT_TEXT,
             "bd": 1,
             "relief": tk.SOLID,
+            "exportselection": False,
         },
         "scrollbar": {"orient": "vertical"},
     }

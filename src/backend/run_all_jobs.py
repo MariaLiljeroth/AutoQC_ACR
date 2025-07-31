@@ -97,8 +97,8 @@ def run_all_jobs(
     # Format results in nested dictionary structure (for clarity and ease of dataframe construction)
     formatted_results = format_results(results)
 
-    # signal to queue that task running process has been completed and should now construct log
-    get_queue().put(QueueTrigger("CONSTRUCT_LOG", formatted_results))
+    # signal to queue that task running process has been completed and should now construct log and report
+    get_queue().put(QueueTrigger("PRESENT_RESULTS", formatted_results))
 
 
 def run_job(

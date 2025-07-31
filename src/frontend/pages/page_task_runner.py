@@ -9,6 +9,7 @@ Written by Nathan Crossley 2025
 """
 
 import threading
+import pydicom
 
 import tkinter as tk
 from tkinter import ttk
@@ -18,8 +19,9 @@ from src.frontend.settings import FONT_TEXT, FONT_TITLE, PAD_LARGE, PAD_MEDIUM
 
 from src.backend.run_all_jobs import run_all_jobs
 from src.backend.log_tools.log_constructor import LogConstructor
+from src.backend.report_tools.create_pdf_report import generate_pdf_report
 
-from src.shared.queueing import get_queue, QueueTrigger
+from src.shared.queueing import QueueTrigger
 
 
 class PageTaskRunner(tk.Frame):
@@ -178,7 +180,7 @@ class PageTaskRunner(tk.Frame):
             self.progress_bar_jobs["value"] += trigger.data
 
         # Handle log construction trigger (from completion of job running)
-        elif trigger.ID == "CONSTRUCT_LOG":
+        elif trigger.ID == "PRESENT_RESULTS":
             self.app_state.results = trigger.data
 
             # create an instance of class for constructing log
@@ -186,3 +188,17 @@ class PageTaskRunner(tk.Frame):
 
             # start the construction process in a separate thread to avoid blocking gui (main thread)
             threading.Thread(target=dfc.run).start()
+
+            # get field strength
+            test_subdir = self.app_state.in_subdirs[0]
+            test_dcm_path = list(test_subdir.glob("*"))[0]
+            field_strength = pydicom.dcmread(test_dcm_path).get("MagneticFieldStrength")
+
+            if isinstance(field_strength, str):
+                field_strength = float(field_strength)
+
+            # also construct report
+            threading.Thread(
+                target=generate_pdf_report,
+                args=(self.app_state.results, self.app_state.baselines, field_strength),
+            ).start()

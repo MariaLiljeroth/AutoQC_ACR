@@ -162,9 +162,12 @@ class PageConfig(tk.Frame):
         """Create all tables required for this page."""
 
         # table to allow user to enter baseline values.
+        uniformity_header = AVAILABLE_TASKS[3]
+        snr_header = AVAILABLE_TASKS[1]
+
         self.table_baselines = SimpleTable(
             self,
-            [AVAILABLE_TASKS[1]],
+            [snr_header, uniformity_header],
             EXPECTED_COILS,
             border_pad=PAD_LARGE,
             bd=1,
