@@ -11,7 +11,7 @@ Written by Nathan Crossley 2025
 from pathlib import Path
 import pydicom
 
-from src.shared.queueing import get_queue
+from src.shared.queueing import get_queue, QueueTrigger
 from src.backend.utils import quick_check_dicom
 
 
@@ -73,26 +73,26 @@ class DcmSorter:
                 # set up suffix that corresponds to specific uid
                 self.populate_uid_suffix_mapper(uid, series_desc)
 
-                # construct folder path to move dicom to using series description and assigned suffix
-                target_folder = self.dir / series_desc / self.uid_suffix_mapper[uid]
+                # construct subdir path to move dicom to using series description and assigned suffix
+                target_subdir = self.dir / series_desc / self.uid_suffix_mapper[uid]
 
             else:
-                # for invalid dicoms, move to miscellaneous folder as clean solution
-                target_folder = self.dir / "dcm_tags_missing"
+                # for invalid dicoms, move to miscellaneous subdir as clean solution
+                target_subdir = self.dir / "dcm_tags_missing"
 
-            # make target folder in os (folder that dcm should be moved to)
-            target_folder.mkdir(exist_ok=True)
+            # make target subdir in os (subdir that dcm should be moved to)
+            target_subdir.mkdir(exist_ok=True)
 
-            # move specific dcm to folder
-            dcm.rename(target_folder / dcm.name)
+            # move specific dcm to target subdir
+            dcm.rename(target_subdir / dcm.name)
 
             # Send signal to queue to indicate that a singular dcm has been sorted
             get_queue().put(
-                ("PROGRESS_BAR_UPDATE", "DICOM_SORTING", 1 / len(self.dcms) * 100)
+                QueueTrigger("PROGBAR_UPDATE_DCM_SORTED", 1 / len(self.dcms) * 100)
             )
 
         # send signal that dcm sorting process is complete
-        get_queue().put(("TASK_COMPLETE", "DICOM_SORTING"))
+        get_queue().put(QueueTrigger("POPULATE_SUBDIRS_LISTBOX"))
 
     def get_valid_DICOMs(self) -> list[Path]:
         """Returns a list of paths to all DICOM files within parent dicom directory
@@ -113,11 +113,11 @@ class DcmSorter:
 
             # send signal to update progress bar to say that one file has been checked
             get_queue().put(
-                ("PROGRESS_BAR_UPDATE", "DICOM_CHECKING", 1 / len(files) * 100)
+                QueueTrigger("PROGBAR_UPDATE_DCM_CHECKED", 1 / len(files) * 100)
             )
 
         # send signal to queue to indicate that dicom checking process has been completed
-        get_queue().put(("TASK_COMPLETE", "DICOM_CHECKING"))
+        get_queue().put(QueueTrigger("CREATE_DCM_SORTING_PROGBAR"))
 
         return dcm_paths
 

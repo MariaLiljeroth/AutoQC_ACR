@@ -3,8 +3,8 @@ app.py
 
 This script defines the App class.
 App inherits from tk.Tk and acts as the toplevel root window for the page-based GUI application.
-App can swap what its displaying by switching the currently displayed tk.Frame subclass (page).
-Page swapping and other triggers are initiatied through the global multiprocessing queue.
+App can swap what its displaying by switching the currently displayed "page" (tk.Frame subclass).
+Page switching and other triggers are initiatied through the global multiprocessing queue.
 
 Written by Nathan Crossley 2025
 
@@ -26,7 +26,7 @@ from src.frontend.pages.page_task_runner import PageTaskRunner
 
 class App(tk.Tk):
     """Centralised frontend app class for AutoQC_ACR.
-    GUI works through switching subclasses of tk.Frame (pages)
+    GUI works through switching "pages" (subclasses of tk.Frame)
     """
 
     # Padding around the edge of displayed pages.
@@ -37,7 +37,7 @@ class App(tk.Tk):
 
     def __init__(self):
         """Initialises the App class, displays configuration page
-        and initialises queue checking.
+        and initialises periodic queue checking for queue triggers.
 
         Instance attributes:
             pages (dict): Dictionary of page instances. Page names are mapped directly to existing instances of associated page classes.
@@ -49,6 +49,8 @@ class App(tk.Tk):
         self.geometry(f"+5+5")
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.title("AutoQC_ACR")
+
+        # initialise class to store general app state.
         self.app_state = AppState()
 
         # Initialise dictionary of page name -> instance mappings.
@@ -60,14 +62,13 @@ class App(tk.Tk):
         # Initialise queue checking.
         self._check_queue()
 
-    def show_page(self, page_class: tk.Frame, *args_to_pass: any):
-        """Takes a tk.Frame subclass (a page) and checks whether an instance
-        already exists in self.pages. If it exists, GUI displays this page.
-        Otherwise, an instance of the page is created and displayed.
+    def show_page(self, page_class: tk.Frame):
+        """Takes a page class and checks whether an instance
+        already exists in self.pages. If it exists, the frontend displays this page.
+        Otherwise, an instance of the page class is created and displayed.
 
         Args:
             page_class (tk.Frame): Page to display.
-            args_to_pass(any): Additional arguments to pass to the page when switching.
         """
 
         # Set self to be resizible so can adjust to fit dimensions of newly swapped in page.
@@ -76,11 +77,12 @@ class App(tk.Tk):
         # Get class name of page that is trying to be swapped in
         page_name = page_class.__name__
 
-        # If instance of that particular page class does not exist in self.pages, instance is created and displayed.
+        # If instance of that particular page class does not exist in self.pages,
+        # instance is created, stored in self.pages and packed.
         if page_name not in self.pages:
 
             # Create instance of page class that is trying to be swapped in
-            page = page_class(self, *args_to_pass)
+            page = page_class(self, self.app_state)
 
             # Track newly created instance in self.pages.
             self.pages[page_name] = page
@@ -90,50 +92,43 @@ class App(tk.Tk):
             if hasattr(self, "current_page"):
                 self.current_page.pack_forget()
 
+        # else matching page is selected from self.pages.
         else:
             page = self.pages[page_name]
 
-        # Set current_page attribute to newly swapped in page.
+        # Set self.current_page to newly swapped in page and raise page to be on top of others
         self.current_page = page
-
-        # Raise newly swapped in page to be on top of others.
         self.after(50, page.tkraise)
 
-        # Lock dimensions of self now that newly swapped in page has expanded.
+        # Lock dimensions of self now that self will have adjusted to fit new page.
         self.after(100, lambda: self.resizable(False, False))
 
     def _check_queue(self):
-        """Initialises queue checking for events. App-level events are immediately handled.
-        Otherwise, event is passed to self.current_page for local processing within that object.
+        """Initialises queue checking for triggers. App-level triggers are immediately handled.
+        Otherwise, trigger is passed to self.current_page for local processing within that object.
         """
 
-        # Try and get event message in queue
+        # Try and get trigger from queue
         try:
             while True:
 
-                # Get event message
-                event = get_queue().get_nowait()
+                # Get trigger
+                trigger = get_queue().get_nowait()
 
-                # Handles page switching event. Additional args can be pased from caller page to new page through event[2].
-                if event[0] == "SWITCH_PAGE":
+                # Handle request to switch pages
+                if trigger.ID == "SWITCH_PAGE":
 
                     # Get name of page to swap in.
-                    page_name = event[1]
-
-                    # Get args to pass to new page.
-                    if len(event) >= 3:
-                        args_to_pass = event[2]
-                    else:
-                        args_to_pass = []
+                    page_name = trigger.data
 
                     # Get class associated with new page's name
                     page_class = self.PAGE_MAP[page_name]
 
                     # Swap in new page.
-                    self.show_page(page_class, *args_to_pass)
+                    self.show_page(page_class)
 
-                # Handles application quitting event and end of AutoQC_ACR runtime.
-                elif event[0] == "QUIT_APPLICATION":
+                # Handles application quitting trigger.
+                elif trigger.ID == "QUIT_APPLICATION":
 
                     # Show messagebox that the application has finished running and quit GUI and sys.
                     messagebox.showinfo(
@@ -142,11 +137,12 @@ class App(tk.Tk):
                     self.destroy()
                     sys.exit()
 
-                # Other events passed down to current visible page, to be handled locally (event not relevant for here) due to separation of concerns.
+                # Other triggers passed down to current visible page, to be handled locally
+                # (trigger not relevant for here).
                 else:
-                    self.current_page.handle_event(event)
+                    self.current_page.handle_task_request(trigger)
 
-        # Pass if queue has no message
+        # Pass if queue has no trigger.
         except Empty:
             pass
 

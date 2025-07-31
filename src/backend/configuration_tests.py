@@ -1,7 +1,7 @@
 """
 configuration_tests.py
 
-This script contains backend functions to test the configuration settings of AutoQC_ACR before the actual tasks
+This script contains backend functions to test the configuration settings of AutoQC_ACR before the actual Hazen jobs
 start running. This ensures that results are accurate and unexpected erros are not thrown mid task runtime.
 
 Written by Nathan Crossley 2025.

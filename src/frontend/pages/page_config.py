@@ -2,7 +2,7 @@
 page_config.py
 
 This file defines the PageConfig tk.Frame subclass, whose purpose is to allow the user to configure AutoQC_ACR settings before running it.
-This page is the first page to appear within the App instance, and is swapped out to PageTaskRunner instance once hazen tasks begin running.
+This page is the first page to appear within the App instance, and is swapped out to PageJobRunner instance once hazen jobs begin running.
 
 Written by Nathan Crossley 2025
 
@@ -15,8 +15,9 @@ import tkinter as tk
 from tkinter import filedialog
 
 from src.shared.context import AVAILABLE_TASKS, EXPECTED_COILS
-from src.shared.queueing import get_queue
+from src.shared.queueing import get_queue, QueueTrigger
 
+from src.frontend.app_state import AppState
 from src.frontend.settings import FONT_TEXT, FONT_TITLE, PAD_MEDIUM, PAD_LARGE
 from src.frontend.widgets.modal_progress_bar import ModalProgressBar
 from src.frontend.widgets.scrollable_listbox import ScrollableListbox
@@ -29,14 +30,22 @@ from src.backend.configuration_tests import file_structure_problems_exist
 
 
 class PageConfig(tk.Frame):
-    def __init__(self, master: tk.Tk):
+    """tk.Frame subclass representing page for AutoQC_ACR settings
+    configuration.
+    """
+
+    def __init__(self, master: tk.Tk, app_state: AppState):
         """Initialises PageConfig instance. Creates, configures
         and lays out widgets within self.
 
         Args:
-            master (tk.Tk): Root window from on which self is placed.
+            master (tk.Tk): Root window within which self is placed.
+            app_state (AppState): class for sharing app state within frontend
         """
         super().__init__(master)
+
+        # store reference to passed app state class.
+        self.app_state = app_state
 
         # Create, configure and layout widgets within self.
         self._create_widgets()
@@ -49,7 +58,8 @@ class PageConfig(tk.Frame):
         self.modal_progress = None
 
     def _create_widgets(self):
-        """Creates widgets within self."""
+        """Creates widgets within self. Individual functions
+        are called for different types of widget."""
         self._create_labels()
         self._create_entries()
         self._create_scrollable_listboxes()
@@ -58,40 +68,67 @@ class PageConfig(tk.Frame):
         self._create_tables()
 
     def _create_labels(self):
+        """Creates all labels required for this page."""
+
+        # create label for the page title
         self.label_title = tk.Label(
             self,
             text="Configuration Settings",
             font=FONT_TITLE,
             anchor="w",
         )
+
+        # create label telling user to browse for an input directory
         self.label_in_dir = tk.Label(self, text="Input directory:", font=FONT_TEXT)
+
+        # create label telling user to browse for an output directory
         self.label_out_dir = tk.Label(self, text="Output directory:", font=FONT_TEXT)
+
+        # create label telling user to select input subdirectories
         self.label_select_subdirs = tk.Label(
             self,
             text="Select subdirectories\nto process:",
             font=FONT_TEXT,
             justify=tk.LEFT,
         )
+
+        # create label telling user to select tasks
         self.label_select_tasks = tk.Label(
             self, text="Select tasks to run:", font=FONT_TEXT
         )
+
+        # create label telling user to input baselines
         self.label_input_baselines = tk.Label(
             self, text="Input baselines:", font=FONT_TEXT
         )
 
     def _create_entries(self):
+        """Creates all entries required for this page."""
+
+        # entry for storing the user's input directory selection
         self.entry_in_dir = tk.Entry(self, font=FONT_TEXT, bd=1, relief=tk.SOLID)
+
+        # entry for storing the user's output directory selection
         self.entry_out_dir = tk.Entry(self, font=FONT_TEXT, bd=1, relief=tk.SOLID)
 
     def _create_scrollable_listboxes(self):
+        """Creates all scrollable listboxes required for this page."""
+
+        # scrollable listbox for user to select input subdirectories.
         self.scrollable_listbox_subdirs = ScrollableListbox(self)
 
     def _create_checkbutton_panels(self):
+        """Creates all checkbutton panels required for this page."""
+
+        # checkbutton panel for user to select tasks that they want to run
         self.checkbutton_panel_tasks = CheckbuttonPanel(
             self, checkbutton_names=AVAILABLE_TASKS
         )
 
     def _create_buttons(self):
+        """Creates all buttons required for this page."""
+
+        # button to allow user to browse for an input directory
         self.button_browse_in_dir = tk.Button(
             self,
             text="Browse",
@@ -100,6 +137,8 @@ class PageConfig(tk.Frame):
             bd=1,
             relief=tk.SOLID,
         )
+
+        # button to allow user to browse for an output directory
         self.button_browse_out_dir = tk.Button(
             self,
             text="Browse",
@@ -108,16 +147,21 @@ class PageConfig(tk.Frame):
             bd=1,
             relief=tk.SOLID,
         )
+
+        # button to allow user to run AutoQC_ACR (end configuration stage)
         self.button_run = tk.Button(
             self,
             text="Run AutoQC_ACR",
             font=FONT_TEXT,
-            command=self._trigger_task_running,
+            command=self._trigger_job_running,
             bd=1,
             relief=tk.SOLID,
         )
 
     def _create_tables(self):
+        """Create all tables required for this page."""
+
+        # table to allow user to enter baseline values.
         self.table_baselines = SimpleTable(
             self,
             [AVAILABLE_TASKS[1]],
@@ -128,6 +172,9 @@ class PageConfig(tk.Frame):
         )
 
     def _layout_widgets(self):
+        """Layout all widgets within self. Individual
+        functions are called for individual types of widget."""
+
         self._layout_labels()
         self._layout_entries()
         self._layout_scrollable_listboxes()
@@ -136,6 +183,7 @@ class PageConfig(tk.Frame):
         self._layout_tables()
 
     def _layout_labels(self):
+        """Layout all labels for this page"""
         self.label_title.grid(
             row=0,
             column=0,
@@ -160,6 +208,7 @@ class PageConfig(tk.Frame):
         )
 
     def _layout_entries(self):
+        """Layout all entries for this page."""
         self.entry_in_dir.grid(
             row=1, column=1, sticky="ew", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
@@ -168,16 +217,19 @@ class PageConfig(tk.Frame):
         )
 
     def _layout_scrollable_listboxes(self):
+        """Layout all scrollable listboxes for this page."""
         self.scrollable_listbox_subdirs.grid(
             row=3, column=1, sticky="ew", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
 
     def _layout_checkbutton_panels(self):
+        """Layout all checkbutton panels for this page."""
         self.checkbutton_panel_tasks.grid(
             row=4, column=1, sticky="w", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
 
     def _layout_buttons(self):
+        """Layout all buttons for this page."""
         self.button_browse_in_dir.grid(row=1, column=2, sticky="w", pady=(0, PAD_LARGE))
         self.button_browse_out_dir.grid(
             row=2, column=2, sticky="w", pady=(0, PAD_LARGE)
@@ -185,6 +237,7 @@ class PageConfig(tk.Frame):
         self.button_run.grid(row=6, column=0, columnspan=3, sticky="ew", padx=50)
 
     def _layout_tables(self):
+        """Layout all tables for this page."""
         self.table_baselines.grid(
             row=5, column=1, padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
@@ -215,31 +268,34 @@ class PageConfig(tk.Frame):
         DICOM sorting process.
         """
 
-        # get user to select input directory through basic gui
-        self.in_dir = Path(filedialog.askdirectory(title="Select Input Directory"))
+        # get user to select input directory through basic gui window
+        current_in_dir = Path(filedialog.askdirectory(title="Select Input Directory"))
 
-        if self.in_dir:
+        if current_in_dir:
             # populates in_dir entry widget with selected input directory
-            populate_entry_widget(self.entry_in_dir, str(self.in_dir.resolve()))
+            populate_entry_widget(self.entry_in_dir, str(current_in_dir.resolve()))
 
             # populates out_dir entry widget with default output directory based on input directory
             populate_entry_widget(
                 self.entry_out_dir,
-                str((self.in_dir.parent / "AutoQC_ACR_Output").resolve()),
+                str((current_in_dir.parent / "AutoQC_ACR_Output").resolve()),
             )
 
             # Instantiates a modal window for progress bar
             self.modal_progress = ModalProgressBar(self, "Checking for DICOMs")
 
             # Instantiates an instance of class for sorting DICOMs
-            ds = DcmSorter(self.in_dir)
+            ds = DcmSorter(current_in_dir)
+
+            # save as instance attribute for later
+            self.current_in_dir = current_in_dir
 
             # starts running DICOM sorting process in separate thread to prevent blocking gui
             threading.Thread(target=ds.run).start()
 
     def _browse_out_dir(self):
         """Asks user to choose an output directory for results (activated through button).
-        Populates self.entry_out_dir with the users choice
+        Populates self.entry_out_dir with the user's choice.
         """
 
         # gets user to select output directory through gui
@@ -249,20 +305,30 @@ class PageConfig(tk.Frame):
             # populate output directory entry widget with user's choice
             populate_entry_widget(self.entry_out_dir, str(out_dir.resolve()))
 
-    def _trigger_task_running(self):
-        config_settings = self._read_config_settings()
-        valid = self._config_settings_valid(*config_settings)
+    def _trigger_job_running(self):
+        """Reads configuration settings from this page and stores to app state class.
+        Checks to see if any configuration settings are invalid and if not triggers
+        job running pipeline.
+        """
 
-        # signal a switch to taskrunner page and pass args
+        # read configuration settings from this page and store to app state
+        self._read_config_settings()
+
+        # check whether all configuration settings are valid or not.
+        valid = self._config_settings_valid()
+
+        # if all settings are valid, send a trigger to the queue, asking to
+        # switch pages to taskrunner page.
         if valid:
-            get_queue().put(("SWITCH_PAGE", "TASKRUNNER", config_settings))
+            get_queue().put(QueueTrigger("SWITCH_PAGE", "TASKRUNNER"))
+
+        # else go back to responsive configuration page for ammendment.
         else:
             return
 
     def _read_config_settings(self):
-        """Pulls configuration settings from widgets after performing relevant
-        validation checks. Sends a message to global queue to switch page to
-        'TASKRUNNER', also passing configuration settings.
+        """Pulls configuration settings from widgets on this page and
+        stores them in app state for use in other pages.
         """
 
         # get input and output directories from relevant entry widgets
@@ -282,40 +348,58 @@ class PageConfig(tk.Frame):
         tasks_to_run = self.checkbutton_panel_tasks.get_selected_items()
 
         # get baselines from table
-        baselines = self.table_baselines.get_as_pandas_df()
+        baselines = self.table_baselines.get_current_state()
 
-        return in_dir, out_dir, in_subdirs, out_subdirs, tasks_to_run, baselines
+        # store all configuration settings in app state, so can be used within any page.
+        self.app_state.in_dir = in_dir
+        self.app_state.out_dir = out_dir
+        self.app_state.in_subdirs = in_subdirs
+        self.app_state.out_subdirs = out_subdirs
+        self.app_state.tasks_to_run = tasks_to_run
+        self.app_state.baselines = baselines
 
-    @staticmethod
-    def _config_settings_valid(
-        in_dir, out_dir, in_subdirs, out_subdirs, tasks_to_run, baselines
-    ):
-        # Check that in_dir is not "." (the fallback option from gui) and that it also exists and is a directory
+    def _config_settings_valid(self) -> bool:
+        """Checks whether all configuration settings in app state
+        class are valid to initiate job running pipeline.
+
+        Returns:
+            bool: True if all configuration settings are valid, False otherwise.
+        """
+
+        # get local copies of all app state attributes needed for validation checks.
+        in_dir = self.app_state.in_dir
+        out_dir = self.app_state.out_dir
+        in_subdirs = self.app_state.in_subdirs
+        out_subdirs = self.app_state.out_subdirs
+        tasks_to_run = self.app_state.tasks_to_run
+        baselines = self.app_state.baselines
+
+        # quit if in_dir is "." (the fallback option from gui) or if its not a directory.
         if str(in_dir) == "." or not in_dir.is_dir() or not in_dir.exists():
             tk.messagebox.showerror("Error", "Input directory is invalid!")
             return False
 
-        # Check that out_dir is not "." (the fallback option from gui) and that it's a directory
+        # quit if out_dir is "." (the fallback option from gui) or if its not a directory.
         if str(out_dir) == "." or not out_dir.is_dir():
             tk.messagebox.showerror("Error", "Output directory is invalid!")
             return False
 
-        # check that 1+ subdirectories have been selected
+        # quit if no subdirectories selected.
         if not in_subdirs:
             tk.messagebox.showerror("Error", "No subdirectories selected!")
             return False
 
-        # if no tasks selected, cancel process
+        # quit if no tasks selected
         if not tasks_to_run:
             tk.messagebox.showerror("Error", "No tasks selected!")
             return False
 
-        # check to see if any baseline values are missing
+        # quit if any baselines are missing
         if (baselines == "").any().any():
             tk.messagebox.showerror("Error", "Values missing in baseline table!")
             return False
 
-        # check file structure before running
+        # quit if any problems with file structure.
         if file_structure_problems_exist(in_subdirs, tasks_to_run):
             return False
 
@@ -349,44 +433,39 @@ class PageConfig(tk.Frame):
         for out_subdir in out_subdirs:
             out_subdir.mkdir(exist_ok=True)
 
+        # if all checks pass, return True
         return True
 
-    def handle_event(self, event: tuple):
-        """Handles specific events passed through from main event
-        queue (see App._check_queue).
+    def handle_task_request(self, trigger: QueueTrigger):
+        """Handles specific page-specific triggers passed through
+        from main queue (see App._check_queue).
 
         Args:
-            event (tuple): Tuple containing unique event trigger strings
-                (see shared/queueing.py).
+            trigger (QueueTrigger): queue trigger to activate.
         """
 
-        # Handle events relating to a progress bar update
-        if event[0] == "PROGRESS_BAR_UPDATE":
+        # Handle triggers requesting updating progress bars for backend DICOM sorting and checking
+        if (
+            trigger.ID == "PROGBAR_UPDATE_DCM_SORTED"
+            or trigger.ID == "PROGBAR_UPDATE_DCM_CHECKED"
+        ):
+            self.modal_progress.add_progress(trigger.data)
 
-            # Triggers progress bar update during DICOM checking and sorting tasks
-            if event[1] in ("DICOM_CHECKING", "DICOM_SORTING"):
-                self.modal_progress.add_progress(event[2])
+        # Handles trigger request to destroy current progress bar and create a new one for DICOM sorting.
+        elif trigger.ID == "CREATE_DCM_SORTING_PROGBAR":
+            self.modal_progress.destroy()
+            self.modal_progress = ModalProgressBar(self, "Sorting loose DICOMs")
 
-            # If try to access a progress bar that is not recognised, throw error
-            else:
-                raise ValueError(f"Invalid progress bar ID: {event[1]}")
+        # Handles trigger event to populate scrollable listbox with input subdirectories after DICOM sorting.
+        elif trigger.ID == "POPULATE_SUBDIRS_LISTBOX":
 
-        # Handle events relating to a particular task being completed
-        if event[0] == "TASK_COMPLETE":
+            # destroys modal progress bar window for DICOM sorting
+            self.modal_progress.destroy()
 
-            # Triggers when software finished checking for valid DICOMs
-            if event[1] == "DICOM_CHECKING":
+            # get all names of input subdirectories
+            names_in_subdirs = [
+                p.name for p in self.current_in_dir.glob("*") if p.is_dir()
+            ]
 
-                # destroys modal progress bar window for dicom checking and creates a new one for dicom sorting
-                self.modal_progress.destroy()
-                self.modal_progress = ModalProgressBar(self, "Sorting loose DICOMs")
-
-            # Triggers when software finished sorting loose DICOMs
-            elif event[1] == "DICOM_SORTING":
-
-                # destroys modal progress bar window for dicom sorting
-                self.modal_progress.destroy()
-
-                # populates listbox with subdirectories of input directory
-                in_subdirs = [p.name for p in self.in_dir.glob("*") if p.is_dir()]
-                self.scrollable_listbox_subdirs.populate(in_subdirs)
+            # populate listbox
+            self.scrollable_listbox_subdirs.populate(names_in_subdirs)

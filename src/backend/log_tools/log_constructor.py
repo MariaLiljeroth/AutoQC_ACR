@@ -1,3 +1,11 @@
+"""
+log_constructor.py
+
+Constructs an excel log using pandas, the passed log path and the passed Hazen job running results.
+
+Written by Nathan Crossley, 2025.
+"""
+
 from pathlib import Path
 from itertools import chain
 import inspect
@@ -6,35 +14,36 @@ import numpy as np
 import pandas as pd
 
 from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
-from src.shared.queueing import get_queue
+from src.shared.queueing import get_queue, QueueTrigger
 
 
-class DataFrameConstructor:
-    """Class to construct pandas DataFrame from taskrunner results and save to Excel.
+class LogConstructor:
+    """Class to construct excel log from taskrunner results."""
 
-    Instance attributes:
-        width_df (int): DataFrame width, from number of expected orientations.
-        blank_row (pd.DataFrame): Template blank row for DataFrame.
-        orientations_header (pd.DataFrame): Header row with all three orientations.
-        results (dict): Organised results from task running.
-        excel_path (Path): Path to save the Excel file.
-    """
-
-    def __init__(self, results: dict, excel_path: Path):
-        """Initialises DataFrameConstructor.
+    def __init__(self, results: dict, log_path: Path):
+        """Initialises LogConstructor. Determines various
+        instance attributes for convenience.
 
         Args:
-            results (dict): Organised results from task running.
-            excel_path (Path): Path to save the Excel file to.
+            results (dict): Results output from Hazen job running.
+            log_path (Path): Path to save log to.
         """
+
+        # define width of pandas df based on number of orientations
         self.width_df = len(EXPECTED_ORIENTATIONS) + 1
+
+        # define a blank row
         self.blank_row = self.make_row(np.nan)
+
+        # define a row for the different orientations
         self.orientations_header = self.make_row(np.nan, EXPECTED_ORIENTATIONS)
+
+        # store results and log path for convenience
         self.results = results
-        self.excel_path = excel_path
+        self.log_path = log_path
 
     def run(self):
-        """Constructs the DataFrame and saves it to an Excel file."""
+        """Constructs a pd dataframe and saves it to an Excel file."""
         # Get list of relevant dataframes for each task.
         tasks = list(self.results.keys())
         task_headers = [self.make_row(task.upper()) for task in tasks]
@@ -46,12 +55,14 @@ class DataFrameConstructor:
             chain.from_iterable(zip(task_headers, task_dfs, blank_rows))
         )
         master_df.to_excel(
-            self.excel_path, header=False, index=False, sheet_name="Sheet1"
+            self.log_path, header=False, index=False, sheet_name="Sheet1"
         )
-        get_queue().put(("TASK_COMPLETE", "DATAFRAME_CONSTRUCTED", master_df))
+
+        # send app quitting trigger via queue.
+        get_queue().put(QueueTrigger("QUIT_APPLICATION", master_df))
 
     def construct_df_for_task(self, task: str) -> pd.DataFrame:
-        """Constructs a DataFrame for a specific task.
+        """Constructs a DataFrame for a specific Hazen task.
 
         Args:
             task (str): Task to construct DataFrame for.
