@@ -6,6 +6,7 @@ passed to all subsequent page objects. Instance attributes represent useful info
 about the state of the app. These attributes can be accessed by all pages.
 
 Written by Nathan Crossley, 2025.
+
 """
 
 

@@ -6,6 +6,7 @@ a simple table widget which is a combination of entries and labels. The user can
 into the entries and these values can be returned.
 
 Written by Nathan Crossley, 2025.
+
 """
 
 import tkinter as tk

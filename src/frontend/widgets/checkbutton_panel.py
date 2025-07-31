@@ -5,6 +5,7 @@ Script defines subclass of tk.Frame to represent an array of checkbuttons
 arranged vertically in one panel.
 
 Written by Nathan Crossley, 2025.
+
 """
 
 import tkinter as tk

@@ -4,6 +4,7 @@ tk_utils.py
 Script defining general tkinter utility functions.
 
 Written by Nathan Crossley, 2025.
+
 """
 
 import tkinter as tk

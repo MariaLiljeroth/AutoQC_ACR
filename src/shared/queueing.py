@@ -7,6 +7,7 @@ whilst still allowing the separation of concerns. A specialist QueueTrigger clas
 for communicating such triggers.
 
 Written by Nathan Crossley 2025.
+
 """
 
 from multiprocessing import Manager

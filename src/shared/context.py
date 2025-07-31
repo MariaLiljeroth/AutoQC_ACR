@@ -4,7 +4,8 @@ context.py
 This script provides contextual information for the whole application.
 This information is shared across both the frontend and backend.
 
-Written by Nathan Crossley 2025
+Written by Nathan Crossley, 2025.
+
 """
 
 # The available tasks that AutoQC_ACR supports.

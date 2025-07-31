@@ -5,6 +5,7 @@ Script defining ScrollableListbox tk.Frame subclass. This class links a listbox
 and a scrollbar together into one cohesive widget.
 
 Written by Nathan Crossley, 2025.
+
 """
 
 import tkinter as tk

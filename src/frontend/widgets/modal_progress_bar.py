@@ -6,6 +6,7 @@ This progress bar is needed for tasks that cannot run in the background, i.e. th
 before the user continues within the GUI (e.g. DICOM sorting).
 
 Written by Nathan Crossley 2025
+
 """
 
 import tkinter as tk
