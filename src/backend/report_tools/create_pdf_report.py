@@ -1,4 +1,4 @@
-import copy
+from copy import deepcopy
 import numpy as np
 
 from reportlab.lib import colors
@@ -18,25 +18,24 @@ from src.backend.report_tools.supfuncs import (
     build_metric_section,
 )
 
+from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
+
 
 def generate_pdf_report(results, baselines, field_strength):
-
     ########## Setup PDF document ############
     doc = SimpleDocTemplate("AQA_Report.pdf", pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
 
     ################ Header ###################
-
-    logo = Image("RoyalSurreyLogo.png", width=60, height=40)
-
+    logo = Image(
+        "src/backend/report_tools/assets/RoyalSurreyLogo.png", width=60, height=40
+    )
     title = Paragraph(
         '<para align="center">Regional Radiation Protection Service</para>',
         styles["Heading1"],
     )
-
     header_table = Table([[title, logo]], colWidths=[450, 70])
-
     story.insert(0, header_table)
     story.append(Spacer(1, 22))
     paragraph_text = '<para align="center">Research & Oncology Suite, Royal Surrey County Hospital Guildford Surrey GU2 7XX Tel: 01483 408395 Email:rsc-tr.RadProt@nhs.net</para>'
@@ -56,16 +55,11 @@ def generate_pdf_report(results, baselines, field_strength):
             ("GRID", (0, 0), (-1, -1), 1, colors.black),  # Borders
         ]
     )
-
     # Need to send in a fresh table style every time since cols change
-
-    table_style_snr = copy.deepcopy(default_table_style)
-    table_style_uni = copy.deepcopy(default_table_style)
-    table_style_st = copy.deepcopy(default_table_style)
-    table_style_ga = copy.deepcopy(default_table_style)
-
-    coils = ["IB", "HN", "Flex"]
-    orientations = ["Ax", "Sag", "Cor"]
+    table_style_snr = deepcopy(default_table_style)
+    table_style_uni = deepcopy(default_table_style)
+    table_style_st = deepcopy(default_table_style)
+    table_style_ga = deepcopy(default_table_style)
 
     ###################### Extract data from formatted_results dict ################
 
@@ -75,8 +69,8 @@ def generate_pdf_report(results, baselines, field_strength):
         results,
         measurement_type="Slice Thickness",
         metric_keys_list=metric_keys_list_st,
-        coils=coils,
-        orientations=orientations,
+        coils=EXPECTED_COILS,
+        orientations=EXPECTED_ORIENTATIONS,
     )
 
     # Uniformity
@@ -85,8 +79,8 @@ def generate_pdf_report(results, baselines, field_strength):
         results,
         measurement_type="Uniformity",
         metric_keys_list=metric_keys_list_uni,
-        coils=coils,
-        orientations=orientations,
+        coils=EXPECTED_COILS,
+        orientations=EXPECTED_ORIENTATIONS,
     )
     # SNR
     metric_keys_list_snr = [["measurement", "snr by smoothing", "measured"]]
@@ -94,8 +88,8 @@ def generate_pdf_report(results, baselines, field_strength):
         results,
         measurement_type="SNR",
         metric_keys_list=metric_keys_list_snr,
-        coils=coils,
-        orientations=orientations,
+        coils=EXPECTED_COILS,
+        orientations=EXPECTED_ORIENTATIONS,
     )
     snr_matrix = np.squeeze(snr_matrix)  # to get rid of empty dimensions
 
@@ -110,14 +104,11 @@ def generate_pdf_report(results, baselines, field_strength):
         results,
         measurement_type="Geometric Accuracy",
         metric_keys_list=metric_keys_list_st,
-        coils=coils,
-        orientations=orientations,
+        coils=EXPECTED_COILS,
+        orientations=EXPECTED_ORIENTATIONS,
     )
     avg_ga_matrix = np.mean(ga_matrix, axis=2)
     print(avg_ga_matrix)
-    ########## Baselines import ############
-
-    baseline_SNRs = baselines  # must be  a numpy array
 
     # Threshold values
     threshold_SNR = 10  # snr %
@@ -159,8 +150,10 @@ def generate_pdf_report(results, baselines, field_strength):
                 snr_matrix[0, 1],
                 snr_matrix[0, 2],
                 round(np.mean(snr_matrix[0, :]), 2),
-                baseline_SNRs[0],
-                round(float(calc_variation(snr_matrix, 0, baseline_SNRs[0])), 2),
+                baselines.loc["SNR", "IB"],
+                round(
+                    float(calc_variation(snr_matrix, 0, baselines.loc["SNR", "IB"])), 2
+                ),
             ],
             [
                 Paragraph("<b>Head & Neck Coil</b>"),
@@ -168,8 +161,10 @@ def generate_pdf_report(results, baselines, field_strength):
                 snr_matrix[1, 1],
                 snr_matrix[1, 2],
                 round(np.mean(snr_matrix[1, :]), 2),
-                baseline_SNRs[1],
-                round(float(calc_variation(snr_matrix, 1, baseline_SNRs[1])), 2),
+                baselines.loc["SNR", "HN"],
+                round(
+                    float(calc_variation(snr_matrix, 1, baselines.loc["SNR", "HN"])), 2
+                ),
             ],
             [
                 Paragraph("<b>Flexible Phased Array Anterior Coil</b>"),
@@ -177,8 +172,11 @@ def generate_pdf_report(results, baselines, field_strength):
                 snr_matrix[2, 1],
                 snr_matrix[2, 2],
                 round(np.mean(snr_matrix[2, :]), 2),
-                baseline_SNRs[2],
-                round(float(calc_variation(snr_matrix, 2, baseline_SNRs[2])), 2),
+                baselines.loc["SNR", "Flex"],
+                round(
+                    float(calc_variation(snr_matrix, 2, baselines.loc["SNR", "Flex"])),
+                    2,
+                ),
             ],
         ],
         thresholds=[threshold_SNR] * 3,

@@ -1,36 +1,12 @@
-#supporting functions
-
-import tkinter as tk
 import numpy as np
-from tkinter import simpledialog, messagebox
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, ListFlowable, ListItem
+from reportlab.platypus import Paragraph, Spacer, Table, ListFlowable, ListItem
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
-def get_number(prompt="Enter value:", title="Input", number_type=float):
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
 
-    while True:
-        result = simpledialog.askstring(title, prompt)
-        if result is None:
-            messagebox.showinfo("Cancelled", "Input cancelled.")
-            return None
-        try:
-            return number_type(result)
-        except ValueError:
-            messagebox.showerror("Invalid Input", f"Please enter a valid {number_type.__name__}.")
-
-def get_multiple_numbers(n=3, number_type=float):
-    values = []
-    for i in range(n):
-        value = get_number(f"Enter baseline SNR for IB,HN,Flex (in that order) {i + 1} of {n}:", number_type=number_type)
-        if value is None:
-            return None  # If user cancels at any point
-        values.append(value)
-    return values
-
-def extract_measurement_matrix(formatted_results, measurement_type, metric_keys_list, coils, orientations):
+def extract_measurement_matrix(
+    formatted_results, measurement_type, metric_keys_list, coils, orientations
+):
     """
     Extracts a 3D numpy array of measurement values when multiple metric keys are provided.
 
@@ -70,43 +46,49 @@ def build_metric_section(
     table_data,
     thresholds=None,
     threshold_column_index=None,
-    threshold_condition='>',
+    threshold_condition=">",
     highlight_colors=(colors.salmon, colors.lightgreen),
-    style=None
+    style=None,
 ):
     styles = getSampleStyleSheet()
     # Section title
-    story.append(Paragraph(f'<font size=16><b>{title}</b></font>', styles["Normal"]))
+    story.append(Paragraph(f"<font size=16><b>{title}</b></font>", styles["Normal"]))
     story.append(Spacer(1, 12))
 
     # Section subtitle
-    story.append(Paragraph(f'<font size=12>{subtitle}</font>', styles["Normal"]))
+    story.append(Paragraph(f"<font size=12>{subtitle}</font>", styles["Normal"]))
     story.append(Spacer(1, 12))
 
     # Bullet list
     bullet_list = ListFlowable(
         [ListItem(Paragraph(b, styles["Normal"])) for b in bullet_points],
-        bulletType='bullet',
-        bulletFontName='Helvetica',
+        bulletType="bullet",
+        bulletFontName="Helvetica",
         bulletColor=colors.black,
         bulletFontSize=14,
-        bulletIndent=0
+        bulletIndent=0,
     )
     story.append(bullet_list)
     story.append(Spacer(1, 22))
 
     # Apply conditional formatting
     if thresholds is not None and threshold_column_index is not None:
-        for row_idx in range(1, len(table_data)): # chooses column 4/6 or whatever is sent in, and goes through rows
+        for row_idx in range(
+            1, len(table_data)
+        ):  # chooses column 4/6 or whatever is sent in, and goes through rows
             try:
                 value = float(table_data[row_idx][threshold_column_index])
                 cell_coords = (threshold_column_index, row_idx)
 
                 # Comparison condition
-                if threshold_condition == '>' and abs(value) > thresholds[row_idx - 1]:
-                    style.add('BACKGROUND', cell_coords, cell_coords, highlight_colors[0])
+                if threshold_condition == ">" and abs(value) > thresholds[row_idx - 1]:
+                    style.add(
+                        "BACKGROUND", cell_coords, cell_coords, highlight_colors[0]
+                    )
                 else:
-                    style.add('BACKGROUND', cell_coords, cell_coords, highlight_colors[1])
+                    style.add(
+                        "BACKGROUND", cell_coords, cell_coords, highlight_colors[1]
+                    )
             except Exception:
                 continue
 

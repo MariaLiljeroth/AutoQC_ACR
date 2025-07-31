@@ -215,4 +215,7 @@ class SimpleTable(tk.Frame):
         # map get func across entry dataframe to get dataframe of current entry values.
         vals = self.entry_df.map(lambda entry: entry.get())
 
+        if self.force_numerical:
+            vals = vals.map(float)
+
         return vals
