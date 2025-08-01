@@ -11,39 +11,24 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     Image,
+    ListFlowable,
+    ListItem,
 )
 
-from src.backend.report_tools.supfuncs import (
-    extract_measurement_matrix,
-    build_metric_section,
-)
-
+from src.backend.utils import chained_get
 from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
 
 
-def generate_pdf_report(results, baselines, field_strength):
-    ########## Setup PDF document ############
-    doc = SimpleDocTemplate("AQA_Report.pdf", pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
+class ReportGenerator:
 
-    ################ Header ###################
-    logo = Image(
-        "src/backend/report_tools/assets/RoyalSurreyLogo.png", width=60, height=40
-    )
-    title = Paragraph(
-        '<para align="center">Regional Radiation Protection Service</para>',
-        styles["Heading1"],
-    )
-    header_table = Table([[title, logo]], colWidths=[450, 70])
-    story.insert(0, header_table)
-    story.append(Spacer(1, 22))
-    paragraph_text = '<para align="center">Research & Oncology Suite, Royal Surrey County Hospital Guildford Surrey GU2 7XX Tel: 01483 408395 Email:rsc-tr.RadProt@nhs.net</para>'
-    story.append(Paragraph(paragraph_text, styles["Normal"]))
-    story.append(Spacer(1, 28))
+    REPORT_NAME = "AQA_Report.pdf"
+    STYLES = getSampleStyleSheet()
+    LOGO_PATH = "src/backend/report_tools/assets/RoyalSurreyLogo.png"
 
-    ########## Table formatting #############
-    default_table_style = TableStyle(
+    DEPARTMENT_NAME = "Regional Radiation Protection Service"
+    DEPARTMENT_INFO = "Research & Oncology Suite, Royal Surrey County Hospital Guildford Surrey GU2 7XX Tel: 01483 408395 Email:rsc-tr.RadProt@nhs.net"
+
+    TABLE_STYLE_DEFAULT = TableStyle(
         [
             ("BACKGROUND", (0, 0), (-1, 0), colors.grey),  # Header background
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),  # Header text color
@@ -55,288 +40,284 @@ def generate_pdf_report(results, baselines, field_strength):
             ("GRID", (0, 0), (-1, -1), 1, colors.black),  # Borders
         ]
     )
-    # Need to send in a fresh table style every time since cols change
-    table_style_snr = deepcopy(default_table_style)
-    table_style_uni = deepcopy(default_table_style)
-    table_style_st = deepcopy(default_table_style)
-    table_style_ga = deepcopy(default_table_style)
 
-    ###################### Extract data from formatted_results dict ################
+    DEEP_KEYS = {
+        "Slice Thickness": [["measurement", "slice width mm"]],
+        "SNR": [["measurement", "snr by smoothing", "measured"]],
+        "Geometric Accuracy": [
+            ["measurement", "Horizontal distance"],
+            ["measurement", "Vertical distance"],
+            ["measurement", "Diagonal distance SE"],
+            ["measurement", "Diagonal distance SW"],
+        ],
+        "Uniformity": [["measurement", "integral uniformity %"]],
+        "Spatial Resolution": [[]],
+    }
 
-    # Slice Thickness
-    metric_keys_list_st = [["measurement", "slice width mm"]]
-    st_matrix = extract_measurement_matrix(  # This output has shape [3,3,1 or 4 depending on task] with st_matrix[0,:] = IB (ax,sag,cor), followed by HN then Flex
-        results,
-        measurement_type="Slice Thickness",
-        metric_keys_list=metric_keys_list_st,
-        coils=EXPECTED_COILS,
-        orientations=EXPECTED_ORIENTATIONS,
-    )
+    BULLET_KWARGS = {
+        "bulletType": "bullet",
+        "bulletFontName": "Helvetica",
+        "bulletColor": colors.black,
+        "bulletFontSize": 14,
+        "bulletIndent": 0,
+    }
 
-    # Uniformity
-    metric_keys_list_uni = [["measurement", "integral uniformity %"]]
-    uni_matrix = extract_measurement_matrix(
-        results,
-        measurement_type="Uniformity",
-        metric_keys_list=metric_keys_list_uni,
-        coils=EXPECTED_COILS,
-        orientations=EXPECTED_ORIENTATIONS,
-    )
-    # SNR
-    metric_keys_list_snr = [["measurement", "snr by smoothing", "measured"]]
-    snr_matrix = extract_measurement_matrix(
-        results,
-        measurement_type="SNR",
-        metric_keys_list=metric_keys_list_snr,
-        coils=EXPECTED_COILS,
-        orientations=EXPECTED_ORIENTATIONS,
-    )
-    snr_matrix = np.squeeze(snr_matrix)  # to get rid of empty dimensions
+    SUBTITLES = {
+        "Slice Thickness": "This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with IPEM report 112, variations of less than 0.7 mm for a prescribed slice thickness of 5 mm is acceptable. If measurements fall outside of this tolerance, this implies an issue with:",
+        "SNR": "This measurement gives an indication as to the overall performance of the scanner. <br/> In accordance with IPEM report 112, variations of less than 10 % are considered acceptable. <br/><br/> If measurements fall outside of this tolerance, this implies either an inconsistency in acquisition parameters, uneven loading or a genuine issue with the scanner. If determined to be a genuine issue with the scanner, a decrease in SNR can be indicative of: ",
+        "Geometric Accuracy": "PLACEHOLDER SUBTITLE",
+        "Uniformity": "This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with the ACR Phantom Test Guidance PIU should be greater than or equal to 87.5% for MRI systems with field strengths less than 3 Tesla. PIU should be greater than or equal to 82.0% for MRI systems with field strength of 3 Tesla.If measurements fall outside of this tolerance, this implies an issue with: ",
+        "Spatial Resolution": "PLACEHOLDER SUBTITLE",
+    }
 
-    # Geometric Distortion
-    metric_keys_list_st = [
-        ["measurement", "Horizontal distance"],
-        ["measurement", "Vertical distance"],
-        ["measurement", "Diagonal distance SW"],
-        ["measurement", "Diagonal distance SW"],
-    ]
-    ga_matrix = extract_measurement_matrix(
-        results,
-        measurement_type="Geometric Accuracy",
-        metric_keys_list=metric_keys_list_st,
-        coils=EXPECTED_COILS,
-        orientations=EXPECTED_ORIENTATIONS,
-    )
-    avg_ga_matrix = np.mean(ga_matrix, axis=2)
-    print(avg_ga_matrix)
-
-    # Threshold values
-    threshold_SNR = 10  # snr %
-    threshold_ST = 0.7  # mm
-    threshold_uni_15T = 87.5  # %
-    threshold_uni_3T = 82  # %
-    threshold_ga = 2  # mm
-
-    ############ SNR table #############
-
-    def calc_variation(matrix, row, BL):
-        var = []
-        average = np.mean(matrix[row, :])
-        # print(average)
-        var = (np.abs(average - BL) / BL) * 100
-        return var
-
-    build_metric_section(
-        story=story,
-        title="Signal to Noise Ratio",
-        subtitle="This measurement gives an indication as to the overall performance of the scanner. <br/> In accordance with IPEM report 112, variations of less than 10 % are considered acceptable. <br/><br/> If measurements fall outside of this tolerance, this implies either an inconsistency in acquisition parameters, uneven loading or a genuine issue with the scanner. If determined to be a genuine issue with the scanner, a decrease in SNR can be indicative of: ",
-        bullet_points=[
+    BULLET_POINTS = {
+        "Slice Thickness": ["Imaging gradient non-linearity", "Poor B0 shim"],
+        "SNR": [
             "Increased noise levels due to e.g interference, coil element coupling or broken coil element",
             "Decreased signal levels due to poor B0 shim, issues with transmit gain or overall degradation of the system",
         ],
-        table_data=[
-            [
-                " ",
-                "Axial",
-                "Sagittal",
-                "Coronal",
-                "Average SNR",
-                "Baseline SNR",
-                "Deviation from baseline (%)",
-            ],
-            [
-                Paragraph("<b>Inbuilt Transmit-Receive Coil</b>"),
-                round(snr_matrix[0, 0], 2),
-                snr_matrix[0, 1],
-                snr_matrix[0, 2],
-                round(np.mean(snr_matrix[0, :]), 2),
-                baselines.loc["SNR", "IB"],
-                round(
-                    float(calc_variation(snr_matrix, 0, baselines.loc["SNR", "IB"])), 2
-                ),
-            ],
-            [
-                Paragraph("<b>Head & Neck Coil</b>"),
-                snr_matrix[1, 0],
-                snr_matrix[1, 1],
-                snr_matrix[1, 2],
-                round(np.mean(snr_matrix[1, :]), 2),
-                baselines.loc["SNR", "HN"],
-                round(
-                    float(calc_variation(snr_matrix, 1, baselines.loc["SNR", "HN"])), 2
-                ),
-            ],
-            [
-                Paragraph("<b>Flexible Phased Array Anterior Coil</b>"),
-                snr_matrix[2, 0],
-                snr_matrix[2, 1],
-                snr_matrix[2, 2],
-                round(np.mean(snr_matrix[2, :]), 2),
-                baselines.loc["SNR", "Flex"],
-                round(
-                    float(calc_variation(snr_matrix, 2, baselines.loc["SNR", "Flex"])),
-                    2,
-                ),
-            ],
-        ],
-        thresholds=[threshold_SNR] * 3,
-        threshold_column_index=6,
-        threshold_condition=">",
-        style=table_style_snr,
-    )
-
-    ############ Uniformity table #############
-    uni_thresholds = (
-        [threshold_uni_3T] * 3 if field_strength == 3 else [threshold_uni_15T] * 3
-    )
-
-    build_metric_section(
-        story=story,
-        title="Uniformity",
-        subtitle="This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with the ACR Phantom Test GuidancePIU should be greater than or equal to 87.5%% for MRI systems with field strengths less than 3 Tesla. PIU should be greater than or equal to 82.0%% for MRI systems with field strength of 3 Tesla.If measurements fall outside of this tolerance, this implies an issue with: ",
-        bullet_points=[
+        "Geometric Accuracy": ["Imaging gradient non-linearity", "Poor B0 shim"],
+        "Uniformity": [
             "Poor B0 shim",
             "Poor B1 shim",
             "Coil element failure/cross-talk",
             "Uneven or incomplete loading",
         ],
-        table_data=[
-            [" ", "Axial", "Sagittal", "Coronal", "PIU"],
-            [
-                Paragraph("<b>Inbuilt Transmit-Receive Coil</b>"),
-                uni_matrix[0, 0],
-                uni_matrix[0, 1],
-                uni_matrix[0, 2],
-                round(float(np.mean(uni_matrix[0, :])), 2),
-            ],
-            [
-                Paragraph("<b>Head & Neck Coil</b>"),
-                uni_matrix[1, 0],
-                uni_matrix[1, 1],
-                uni_matrix[1, 2],
-                round(float(np.mean(uni_matrix[1, :])), 2),
-            ],
-            [
-                Paragraph("<b>Flexible Phased Array Anterior Coil</b>"),
-                uni_matrix[2, 0],
-                uni_matrix[2, 1],
-                uni_matrix[2, 2],
-                round(float(np.mean(uni_matrix[2, :])), 2),
-            ],
+        "Spatial Resolution": [
+            "PLACEHOLDER BULLET POINT",
+            "PLACEHOLDER BULLET POINT",
+            "PLACEHOLDER BULLET POINT",
         ],
-        thresholds=uni_thresholds,
-        threshold_column_index=4,
-        threshold_condition="<",
-        style=table_style_uni,
-    )
-    # ################ SLice Thickness ###################
+    }
 
-    avg_st_ib = round(float(np.mean(st_matrix[0, :])))
-    avg_st_hn = round(float(np.mean(st_matrix[1, :])))
-    avg_st_flex = round(float(np.mean(st_matrix[2, :])))
-    actual_st = 5  # mm
+    COIL_DESCRIPTIONS = {
+        "IB": "Inbuilt Transmit-Receive Coil",
+        "HN": "Head & Neck Coil",
+        "Flex": "Flexible Phased Array Anterior Coil",
+    }
 
-    build_metric_section(
-        story=story,
-        title="Slice Thickness",
-        subtitle="This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with IPEM report 112, variations of less than 0.7 mm for a prescribed slice thickness of 5 mm is acceptable. If measurements fall outside of this tolerance, this implies an issue with:",
-        bullet_points=["Imaging gradient non-linearity", "Poor B0 shim"],
-        table_data=[
-            [
-                " ",
-                "Axial",
-                "Sagittal",
-                "Coronal",
-                "Average",
-                "Deviation from prescribed (mm)",
-            ],
-            [
-                Paragraph("<b>Inbuilt Transmit-Receive Coil</b>"),
-                st_matrix[0, 0],
-                st_matrix[0, 1],
-                st_matrix[0, 2],
-                avg_st_ib,
-                np.abs(actual_st - avg_st_ib),
-            ],
-            [
-                Paragraph("<b>Head & Neck Coil</b>"),
-                st_matrix[1, 0],
-                st_matrix[1, 1],
-                st_matrix[1, 2],
-                avg_st_hn,
-                np.abs(actual_st - avg_st_hn),
-            ],
-            [
-                Paragraph("<b>Flexible Phased Array Anterior Coil</b>"),
-                st_matrix[2, 0],
-                st_matrix[2, 1],
-                st_matrix[2, 2],
-                avg_st_flex,
-                np.abs(actual_st - avg_st_flex),
-            ],
-        ],
-        thresholds=[threshold_ST] * 3,
-        threshold_column_index=5,
-        threshold_condition=">",
-        style=table_style_st,
-    )
+    COIL_ROW_MAP = {"IB": 0, "HN": 1, "Flex": 2}
 
-    # ################ Geometric Distortion ###################
+    TRUE_SLICE_THICKNESS = 5  # mm
+    TRUE_PHANTOM_DIAMETER = 173  # mm
 
-    actual_length = 173  # mm
+    def __init__(self, results, baselines, field_strength):
+        self.results = results
+        self.baselines = baselines
+        self.field_strength = field_strength
+        self.story = []
 
-    def calc_diff_lengths(matrix, row, actual_length):
-        var = []
-        average = np.mean(matrix[row, :])
-        var = np.abs(average - actual_length)
-        return var
+        self.thresholds = {
+            "Slice Thickness": 0.7,  # mm
+            "SNR": 10,  # %
+            "Geometric Accuracy": 2,  # mm:
+            "Uniformity": 82 if field_strength == 3 else 87.5,  # %
+            "Spatial Resolution": None,
+        }
 
-    build_metric_section(
-        story=story,
-        title="Geometric Accuracy",
-        subtitle=":",
-        bullet_points=["Imaging gradient non-linearity", "Poor B0 shim"],
-        table_data=[
+    def run(self):
+        self.add_header()
+        for task in self.results:
+            self.add_section(task)
+
+        doc = SimpleDocTemplate(self.REPORT_NAME, pagesize=letter)
+        doc.build(self.story)
+
+        print("✅ PDF created !")
+
+    def add_header(self):
+        # construct table containing title and logo - add to story
+        logo = Image(self.LOGO_PATH, 60, 40)
+        title = Paragraph(
+            f'<para align="center">{self.DEPARTMENT_NAME}</para>',
+            self.STYLES["Heading1"],
+        )
+        title_table = Table([[title, logo]], colWidths=[450, 70])
+        self.story.insert(0, title_table)
+        self.story.append(Spacer(1, 22))
+
+        # add paragraph for department info
+        department_info = Paragraph(
+            f'<para align="center">{self.DEPARTMENT_INFO}</para>', self.STYLES["Normal"]
+        )
+        self.story.append(department_info)
+        self.story.append(Spacer(1, 28))
+
+    def add_section(self, task):
+        matrix = self.extract_task_matrix(task)
+        table_data = self.get_table_data(task, matrix)
+        self.build_metric_section(task, matrix, table_data)
+
+    def extract_task_matrix(self, task):
+        deep_keys = self.DEEP_KEYS[task]
+        num_metrics = len(deep_keys)
+
+        data = np.full(
+            (len(EXPECTED_COILS), len(EXPECTED_ORIENTATIONS), num_metrics), np.nan
+        )
+
+        for i, coil in enumerate(EXPECTED_COILS):
+            for j, orientation in enumerate(EXPECTED_ORIENTATIONS):
+                for k, metric_keys in enumerate(deep_keys):
+                    # Use chained_get to safely traverse: measurement_type -> coil -> orientation -> *metric_keys
+                    val = chained_get(
+                        self.results,
+                        task,
+                        coil,
+                        orientation,
+                        *metric_keys,
+                        default=None,
+                    )
+                    if val is not None:
+                        try:
+                            data[i, j, k] = float(val)
+                        except (TypeError, ValueError):
+                            pass  # leave as NaN if conversion fails
+
+        return data
+
+    def get_table_data(self, task, matrix):
+        basic_table_header = self.get_table_header(task)
+        table_data = [basic_table_header]
+
+        for coil_id, row_idx in self.COIL_ROW_MAP.items():
+            row_basic = self.get_basic_row_data(matrix, row_idx, coil_id)
+
+            if task == "Slice Thickness":
+                diff_from_actual = abs(row_basic[-1] - self.TRUE_SLICE_THICKNESS)
+                row_extension = [diff_from_actual]
+
+            elif task == "SNR":
+                baseline = self.baselines.loc[task, coil_id]
+                perc_diff_from_baseline = round(
+                    float(
+                        self.calc_deviation_row_mean_from_val(
+                            matrix, row_idx, baseline, "percentage"
+                        )
+                    ),
+                    2,
+                )
+                row_extension = [baseline, perc_diff_from_baseline]
+
+            elif task == "Geometric Accuracy":
+                deviation = round(
+                    float(
+                        self.calc_deviation_row_mean_from_val(
+                            matrix, row_idx, self.TRUE_PHANTOM_DIAMETER, "absolute"
+                        )
+                    )
+                )
+                row_extension = [deviation]
+
+            elif task == "Uniformity":
+                row_extension = []
+
+            full_row = row_basic + row_extension
+            table_data.append(full_row)
+
+        return table_data
+
+    @staticmethod
+    def get_table_header(task):
+        HEADER_EXTENSIONS = {
+            "Slice Thickness": ["Deviation from prescribed (mm)"],
+            "SNR": ["Baseline SNR", "Deviation from baseline (%)"],
+            "Geometric Accuracy": ["Deviation from actual length"],
+            "Uniformity": [],
+            "Spatial Resolution": [],
+        }
+
+        basic_table_header = [" ", "Axial", "Sagittal", "Coronal", f"Average {task}"]
+
+        final_header = basic_table_header + HEADER_EXTENSIONS[task]
+
+        return final_header
+
+    def get_basic_row_data(self, matrix, row_idx, coil_id):
+        basic_row_data = [
+            Paragraph(f"<b>{self.COIL_DESCRIPTIONS[coil_id]}</b>"),
+            *matrix[row_idx, :3],
+            np.nanmean(matrix[row_idx, :]),
+        ]
+
+        return basic_row_data
+
+    def calc_deviation_row_mean_from_val(
+        matrix, row, reference_val, representation="absolute"
+    ):
+        row_average = np.nanmean(matrix[row, :])
+        deviation = row_average - reference_val
+        if representation == "absolute":
+            deviation = abs(deviation)
+        elif representation == "percentage":
+            deviation = np.abs(deviation / reference_val) * 100
+        else:
+            raise ValueError(
+                f"representation arg expected to be 'absolute' or 'percentage' but received {representation}"
+            )
+        return deviation
+
+    def build_metric_section(self, task, table_data):
+
+        # Take deep copy of table style
+        table_style = deepcopy(self.TABLE_STYLE_DEFAULT)
+
+        # Section title
+        self.story.append(
+            Paragraph(f"<font size=16><b>{task}</b></font>", self.STYLES["Normal"])
+        )
+        self.story.append(Spacer(1, 12))
+
+        # Section subtitle
+        self.story.append(
+            Paragraph(
+                f"<font size=12>{self.SUBTITLES[task]}</font>", self.STYLES["Normal"]
+            )
+        )
+        self.story.append(Spacer(1, 12))
+
+        # Bullet list
+        bullet_list = ListFlowable(
             [
-                " ",
-                "Axial",
-                "Sagittal",
-                "Coronal",
-                "Average",
-                "Deviation from actual length(mm)",
+                ListItem(Paragraph(b, self.STYLES["Normal"]))
+                for b in self.BULLET_POINTS[task]
             ],
-            [
-                Paragraph("<b>Inbuilt Transmit-Receive Coil</b>"),
-                avg_ga_matrix[0, 0],
-                avg_ga_matrix[0, 1],
-                avg_ga_matrix[0, 2],
-                round(float(np.mean(avg_ga_matrix[0, :])), 2),
-                calc_diff_lengths(avg_ga_matrix, 0, actual_length),
-            ],
-            [
-                Paragraph("<b>Head & Neck Coil</b>"),
-                avg_ga_matrix[1, 0],
-                avg_ga_matrix[1, 1],
-                avg_ga_matrix[1, 2],
-                round(float(np.mean(avg_ga_matrix[1, :])), 2),
-                calc_diff_lengths(avg_ga_matrix, 1, actual_length),
-            ],
-            [
-                Paragraph("<b>Flexible Phased Array Anterior Coil</b>"),
-                avg_ga_matrix[2, 0],
-                avg_ga_matrix[2, 1],
-                avg_ga_matrix[2, 2],
-                round(float(np.mean(avg_ga_matrix[2, :])), 2),
-                calc_diff_lengths(avg_ga_matrix, 2, actual_length),
-            ],
-        ],
-        thresholds=[threshold_ga] * 3,
-        threshold_column_index=5,
-        threshold_condition=">",
-        style=table_style_ga,
-    )
+            **self.BULLET_KWARGS,
+        )
+        self.story.append(bullet_list)
+        self.story.append(Spacer(1, 22))
 
-    # # Build the PDF
-    doc.build(story)
+        # Apply conditional formatting
+        THRESHOLD_CONDITIONS = {
+            "Slice Thickness": ">",
+            "SNR": ">",
+            "Geometric Accuracy": ">",
+            "Uniformity": "<",
+            "Spatial Resolution": ">",
+        }
+        threshold = self.thresholds[task]
+        if threshold is not None:
+            for row_idx in range(
+                1, len(table_data)
+            ):  # chooses column 4/6 or whatever is sent in, and goes through rows
+                try:
+                    value = float(table_data[row_idx][-1])
+                    cell_coords = (-1, row_idx)
 
-    print("✅ PDF created !")
+                    # Comparison condition
+                    if THRESHOLD_CONDITIONS[task] == ">" and abs(value) > threshold:
+                        table_style.add(
+                            "BACKGROUND", cell_coords, cell_coords, colors.salmon
+                        )
+                    else:
+                        table_style.add(
+                            "BACKGROUND", cell_coords, cell_coords, colors.light_green
+                        )
+                except Exception:
+                    continue
+
+        # Create and style table
+        table = Table(table_data)
+        table.setStyle(table_style)
+        self.story.append(table)
+        self.story.append(Spacer(1, 12))

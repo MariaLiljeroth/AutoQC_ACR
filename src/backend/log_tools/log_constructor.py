@@ -13,6 +13,8 @@ import inspect
 import numpy as np
 import pandas as pd
 
+from src.backend.utils import chained_get
+
 from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
 from src.shared.queueing import get_queue, QueueTrigger
 
@@ -113,8 +115,13 @@ class LogConstructor:
         """
         if task == "Slice Thickness":
             slice_thicknesses = [
-                self.chained_get(
-                    task, coil, orientation, "measurement", "slice width mm"
+                chained_get(
+                    self.results,
+                    task,
+                    coil,
+                    orientation,
+                    "measurement",
+                    "slice width mm",
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
@@ -142,7 +149,8 @@ class LogConstructor:
                 # get pairs of SNR and normalised SNR
                 snr_norm_pairs = (
                     [
-                        self.chained_get(
+                        chained_get(
+                            self.results,
                             task,
                             coil,
                             orientation,
@@ -150,7 +158,8 @@ class LogConstructor:
                             f"snr by {'smoothing' if smoothing else 'subtraction'}",
                             "measured",
                         ),
-                        self.chained_get(
+                        chained_get(
+                            self.results,
                             task,
                             coil,
                             orientation,
@@ -170,8 +179,7 @@ class LogConstructor:
             # If all values are N/A, try to pull using subtraction key
             if all(
                 [
-                    x
-                    == inspect.signature(self.chained_get).parameters["default"].default
+                    x == inspect.signature(chained_get).parameters["default"].default
                     for x in snr + normalised_snr
                 ]
             ):
@@ -184,12 +192,13 @@ class LogConstructor:
         elif task == "Geometric Accuracy":
             # Get quadruplets of lengths for each orientation for the specific coil.
             length_quadruplets = [
-                self.chained_get(
+                chained_get(
+                    self.results,
                     task,
                     coil,
                     orientation,
                     "measurement",
-                    default=inspect.signature(self.chained_get)
+                    default=inspect.signature(chained_get)
                     .parameters["default"]
                     .default,
                 )
@@ -217,9 +226,7 @@ class LogConstructor:
                     return av_perc_diff, cv
                 except:
                     return [
-                        inspect.signature(self.chained_get)
-                        .parameters["default"]
-                        .default
+                        inspect.signature(chained_get).parameters["default"].default
                     ] * 2
 
             av_perc_diffs, cvs = zip(
@@ -233,8 +240,13 @@ class LogConstructor:
         elif task == "Uniformity":
             # get uniformity values for specific coil
             uniformity = [
-                self.chained_get(
-                    task, coil, orientation, "measurement", "integral uniformity %"
+                chained_get(
+                    self.results,
+                    task,
+                    coil,
+                    orientation,
+                    "measurement",
+                    "integral uniformity %",
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
@@ -244,7 +256,9 @@ class LogConstructor:
         elif task == "Spatial Resolution":
             # get mtf50 values for specific coil
             mtf50 = [
-                self.chained_get(task, coil, orientation, "measurement", "mtf50")
+                chained_get(
+                    self.results, task, coil, orientation, "measurement", "mtf50"
+                )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
 
@@ -253,9 +267,7 @@ class LogConstructor:
                 (
                     1 / mtf
                     if isinstance(mtf, (int, float))
-                    else inspect.signature(self.chained_get)
-                    .parameters["default"]
-                    .default
+                    else inspect.signature(chained_get).parameters["default"].default
                 )
                 for mtf in mtf50
             ]
@@ -279,22 +291,3 @@ class LogConstructor:
         if values is None:
             values = [np.nan for _ in range(self.width_df - 1)]
         return pd.DataFrame([label] + values).T
-
-    def chained_get(self, *keys, default="N/A") -> any:
-        """Safe getter for nested results dict.
-        Iterates through keys and returns the value at the end of the chain if it exists.
-        Otherwise, returns the default value.
-
-        Args:
-            default (str, optional): Default parameter if key chain fails. Defaults to "N/A".
-
-        Returns:
-            any: Value at the end of the key chain or default value.
-        """
-        d = self.results.copy()
-        for key in keys:
-            if isinstance(d, dict):
-                d = d.get(key, None)
-                if d is None:
-                    return default
-        return d
