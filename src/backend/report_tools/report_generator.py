@@ -1,6 +1,8 @@
 from copy import deepcopy
 import numbers
+import sys
 import numpy as np
+from pathlib import Path
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -24,7 +26,16 @@ class ReportGenerator:
 
     REPORT_NAME = "AQA_Report.pdf"
     STYLES = getSampleStyleSheet()
-    LOGO_PATH = "src/backend/report_tools/assets/royal_surrey_logo.png"
+
+    if getattr(sys, "frozen", False):
+
+        LOGO_PATH = str(
+            (
+                Path(sys.executable).parent / "_internal/assets/royal_surrey_logo.png"
+            ).resolve()
+        )
+    else:
+        LOGO_PATH = "src/backend/assets/royal_surrey_logo.png"
 
     DEPARTMENT_NAME = "Regional Radiation Protection Service"
     DEPARTMENT_INFO = "Research & Oncology Suite, Royal Surrey County Hospital Guildford Surrey GU2 7XX Tel: 01483 408395 Email:rsc-tr.RadProt@nhs.net"

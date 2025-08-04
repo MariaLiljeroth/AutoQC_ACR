@@ -192,7 +192,8 @@ class PageTaskRunner(tk.Frame):
 
             # get field strength
             test_subdir = self.app_state.in_subdirs[0]
-            test_dcm_path = list(test_subdir.glob("*"))[0]
+            test_files = list(test_subdir.glob("*"))
+            test_dcm_path = [x for x in test_files if x.is_file()][0]
             field_strength = pydicom.dcmread(test_dcm_path).get("MagneticFieldStrength")
 
             if isinstance(field_strength, str):
