@@ -1,3 +1,11 @@
+"""
+log_constructor.py
+
+Constructs an excel log using pandas, the passed log path and the passed Hazen job running results.
+
+Written by Nathan Crossley, 2025.
+"""
+
 from pathlib import Path
 from itertools import chain
 import inspect
@@ -5,36 +13,39 @@ import inspect
 import numpy as np
 import pandas as pd
 
+from src.backend.utils import chained_get
+
 from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
-from src.shared.queueing import get_queue
+from src.shared.queueing import get_queue, QueueTrigger
 
 
-class DataFrameConstructor:
-    """Class to construct pandas DataFrame from taskrunner results and save to Excel.
+class LogConstructor:
+    """Class to construct excel log from taskrunner results."""
 
-    Instance attributes:
-        width_df (int): DataFrame width, from number of expected orientations.
-        blank_row (pd.DataFrame): Template blank row for DataFrame.
-        orientations_header (pd.DataFrame): Header row with all three orientations.
-        results (dict): Organised results from task running.
-        excel_path (Path): Path to save the Excel file.
-    """
-
-    def __init__(self, results: dict, excel_path: Path):
-        """Initialises DataFrameConstructor.
+    def __init__(self, results: dict, log_path: Path):
+        """Initialises LogConstructor. Determines various
+        instance attributes for convenience.
 
         Args:
-            results (dict): Organised results from task running.
-            excel_path (Path): Path to save the Excel file to.
+            results (dict): Results output from Hazen job running.
+            log_path (Path): Path to save log to.
         """
+
+        # define width of pandas df based on number of orientations
         self.width_df = len(EXPECTED_ORIENTATIONS) + 1
+
+        # define a blank row
         self.blank_row = self.make_row(np.nan)
+
+        # define a row for the different orientations
         self.orientations_header = self.make_row(np.nan, EXPECTED_ORIENTATIONS)
+
+        # store results and log path for convenience
         self.results = results
-        self.excel_path = excel_path
+        self.log_path = log_path
 
     def run(self):
-        """Constructs the DataFrame and saves it to an Excel file."""
+        """Constructs a pd dataframe and saves it to an Excel file."""
         # Get list of relevant dataframes for each task.
         tasks = list(self.results.keys())
         task_headers = [self.make_row(task.upper()) for task in tasks]
@@ -46,12 +57,11 @@ class DataFrameConstructor:
             chain.from_iterable(zip(task_headers, task_dfs, blank_rows))
         )
         master_df.to_excel(
-            self.excel_path, header=False, index=False, sheet_name="Sheet1"
+            self.log_path, header=False, index=False, sheet_name="Sheet1"
         )
-        get_queue().put(("TASK_COMPLETE", "DATAFRAME_CONSTRUCTED", master_df))
 
     def construct_df_for_task(self, task: str) -> pd.DataFrame:
-        """Constructs a DataFrame for a specific task.
+        """Constructs a DataFrame for a specific Hazen task.
 
         Args:
             task (str): Task to construct DataFrame for.
@@ -102,8 +112,13 @@ class DataFrameConstructor:
         """
         if task == "Slice Thickness":
             slice_thicknesses = [
-                self.chained_get(
-                    task, coil, orientation, "measurement", "slice width mm"
+                chained_get(
+                    self.results,
+                    task,
+                    coil,
+                    orientation,
+                    "measurement",
+                    "slice width mm",
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
@@ -131,7 +146,8 @@ class DataFrameConstructor:
                 # get pairs of SNR and normalised SNR
                 snr_norm_pairs = (
                     [
-                        self.chained_get(
+                        chained_get(
+                            self.results,
                             task,
                             coil,
                             orientation,
@@ -139,7 +155,8 @@ class DataFrameConstructor:
                             f"snr by {'smoothing' if smoothing else 'subtraction'}",
                             "measured",
                         ),
-                        self.chained_get(
+                        chained_get(
+                            self.results,
                             task,
                             coil,
                             orientation,
@@ -159,8 +176,7 @@ class DataFrameConstructor:
             # If all values are N/A, try to pull using subtraction key
             if all(
                 [
-                    x
-                    == inspect.signature(self.chained_get).parameters["default"].default
+                    x == inspect.signature(chained_get).parameters["default"].default
                     for x in snr + normalised_snr
                 ]
             ):
@@ -173,12 +189,13 @@ class DataFrameConstructor:
         elif task == "Geometric Accuracy":
             # Get quadruplets of lengths for each orientation for the specific coil.
             length_quadruplets = [
-                self.chained_get(
+                chained_get(
+                    self.results,
                     task,
                     coil,
                     orientation,
                     "measurement",
-                    default=inspect.signature(self.chained_get)
+                    default=inspect.signature(chained_get)
                     .parameters["default"]
                     .default,
                 )
@@ -206,9 +223,7 @@ class DataFrameConstructor:
                     return av_perc_diff, cv
                 except:
                     return [
-                        inspect.signature(self.chained_get)
-                        .parameters["default"]
-                        .default
+                        inspect.signature(chained_get).parameters["default"].default
                     ] * 2
 
             av_perc_diffs, cvs = zip(
@@ -222,8 +237,13 @@ class DataFrameConstructor:
         elif task == "Uniformity":
             # get uniformity values for specific coil
             uniformity = [
-                self.chained_get(
-                    task, coil, orientation, "measurement", "integral uniformity %"
+                chained_get(
+                    self.results,
+                    task,
+                    coil,
+                    orientation,
+                    "measurement",
+                    "integral uniformity %",
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
@@ -233,7 +253,9 @@ class DataFrameConstructor:
         elif task == "Spatial Resolution":
             # get mtf50 values for specific coil
             mtf50 = [
-                self.chained_get(task, coil, orientation, "measurement", "mtf50")
+                chained_get(
+                    self.results, task, coil, orientation, "measurement", "mtf50"
+                )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
 
@@ -242,9 +264,7 @@ class DataFrameConstructor:
                 (
                     1 / mtf
                     if isinstance(mtf, (int, float))
-                    else inspect.signature(self.chained_get)
-                    .parameters["default"]
-                    .default
+                    else inspect.signature(chained_get).parameters["default"].default
                 )
                 for mtf in mtf50
             ]
@@ -268,22 +288,3 @@ class DataFrameConstructor:
         if values is None:
             values = [np.nan for _ in range(self.width_df - 1)]
         return pd.DataFrame([label] + values).T
-
-    def chained_get(self, *keys, default="N/A") -> any:
-        """Safe getter for nested results dict.
-        Iterates through keys and returns the value at the end of the chain if it exists.
-        Otherwise, returns the default value.
-
-        Args:
-            default (str, optional): Default parameter if key chain fails. Defaults to "N/A".
-
-        Returns:
-            any: Value at the end of the key chain or default value.
-        """
-        d = self.results.copy()
-        for key in keys:
-            if isinstance(d, dict):
-                d = d.get(key, None)
-                if d is None:
-                    return default
-        return d

@@ -2,15 +2,11 @@
 queueing.py
 
 This script defines the functions to allow a single multiprocessing queue to be accessed.
-Progress updates are sent to the queue to communicate between the frontend and the backend,
-whilst still allowing the separation of concerns.
+Triggers are sent to the queue to communicate between the frontend and the backend,
+whilst still allowing the separation of concerns. A specialist QueueTrigger class is provided
+for communicating such triggers.
 
-Queue updates should be passed as tuples with (GENERIC_ID, SPECIFIC_ID, ADDITIONAL_ARGS...)
-    where GENERIC_ID is a general identifier for the nature of the update (e.g. TASK_COMPLETE to indicate that a task has been completed).
-    and SPECIFIC_ID is a specific identifier for the nature of the update (e.g. DICOM_SORTING to indicate that the DICOM sorting process has been completed).
-    and ADDITIONAL_ARGS is a placeholder for any additional args or data that needs to be passed through the queue.
-
-Written by Nathan Crossley 2025
+Written by Nathan Crossley 2025.
 
 """
 
@@ -33,3 +29,20 @@ def get_queue() -> BaseProxy:
     if queue is None:
         queue = Manager().Queue()
     return queue
+
+
+class QueueTrigger:
+    """ "Queue representing a particular request, trigger
+    or update sent between the frontend and the backend. The
+    ID attribute is used to uniquely identify the request and
+    the data attribute is used to optionally pass data with the trigger."""
+
+    def __init__(self, ID: str, data: any = None):
+        """Initialises QueueTrigger class.
+
+        Args:
+            ID (str): Unique identifier for trigger.
+            data (any, optional): Additional data to pass with trigger.. Defaults to None.
+        """
+        self.ID = ID
+        self.data = data

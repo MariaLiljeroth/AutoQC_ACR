@@ -1,9 +1,9 @@
 """
-run_tasks.py
+run_all_jobs.py
 
-This script defines functions that are used to run the specified Hazen tasks in the backend.
+This script defines functions that are used to run all specified Hazen jobs in the backend.
 Multiprocessing is utilised to vastly speed up task running, based on the number of CPU cores
-compared to the number of Hazen tasks requested. The tasks results are sent to the frontend via
+compared to the number of Hazen jobs requested. The results are sent to the frontend via
 the global queue.
 
 Written by Nathan Crossley 2025
@@ -21,7 +21,7 @@ from src.backend.hazen.hazenlib.utils import get_dicom_files
 from src.backend.utils import nested_dict, defaultdict_to_dict, substring_matcher
 from dev_settings import FORCE_SEQUENTIAL_PROCESSING
 
-from src.shared.queueing import get_queue
+from src.shared.queueing import get_queue, QueueTrigger
 from src.shared.context import (
     EXPECTED_ORIENTATIONS,
     EXPECTED_COILS,
@@ -29,7 +29,9 @@ from src.shared.context import (
 )
 
 
-def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]):
+def run_all_jobs(
+    in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: list[str]
+):
     """Runs all specified tasks on all input subdirectories, saving plots to the corresponding.
     output subdirectories. Utilises serial or multiprocessing depending on the number of CPU
     cores available and how many Hazen jobs are requested.
@@ -89,14 +91,14 @@ def run_tasks(in_subdirs: list[Path], out_subdirs: list[Path], tasks_to_run: lis
             results = pool.starmap(run_job, job_args)
 
     else:
-        # run tasks serially (no multiprocessing)
+        # run jobs serially (no multiprocessing)
         results = [run_job(*args) for args in job_args]
 
     # Format results in nested dictionary structure (for clarity and ease of dataframe construction)
     formatted_results = format_results(results)
 
-    # signal to queue that task running process has been completed and send results
-    get_queue().put(("TASK_COMPLETE", "TASK_RUNNING", formatted_results))
+    # signal to queue that task running process has been completed and should now construct log and report
+    get_queue().put(QueueTrigger("PRESENT_RESULTS", formatted_results))
 
 
 def run_job(
@@ -133,7 +135,7 @@ def run_job(
         print(
             f"Warning: For {in_subdir.name}, {task} could not be calculated because {in_subdir.name} contains an unexpected number of DICOMs. Expected 11 but received {len(kwargs["input_data"])}."
         )
-        queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
+        queue.put(QueueTrigger("PROGBAR_UPDATE_JOB_COMPLETED", perc))
         return None
 
     # if Philips scanner and SNR task called, pass helper data set to task class through subtract kwarg
@@ -146,21 +148,21 @@ def run_job(
     # map task string to associated class and instantiate, passing kwargs
     task_obj = TASK_STR_TO_CLASS[task](**kwargs)
 
-    # run task to get result
+    # run job to get result
     result = task_obj.run()
 
-    # Update task running progress bar
-    queue.put(("PROGRESS_BAR_UPDATE", "TASK_RUNNING", perc))
+    # Update job running progress bar
+    queue.put(QueueTrigger("PROGBAR_UPDATE_JOB_COMPLETED", perc))
 
     return result
 
 
 def format_results(results: dict) -> dict:
-    """Formats the raw results from running all Hazen tasks into useful nested dictionary structure.
-    A specific task result can then be accessed by calling [task][coil][orientation] on the formatted dict.
+    """Formats the raw results from running all Hazen jobs into useful nested dictionary structure.
+    A specific job result can then be accessed by calling [task][coil][orientation] on the formatted dict.
 
     Args:
-        results (dict): Raw results from Hazen task running.
+        results (dict): Raw results from Hazen job running.
 
     Returns:
         dict: Formatted results in nested dictionary structure.

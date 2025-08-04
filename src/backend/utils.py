@@ -38,6 +38,27 @@ def defaultdict_to_dict(d: defaultdict) -> dict:
     return d
 
 
+def chained_get(main_dict: dict, *keys, default: any = "N/A") -> any:
+    """Safe getter for nested results dict.
+    Iterates through keys and returns the value at the end of the chain if it exists.
+    Otherwise, returns the default value.
+
+    Args:
+        main_dict (dict): Dictionary to search in.
+        default (any, optional): Default return value if key chain fails.
+
+    Returns:
+        any: Value at the end of the key chain or default value.
+    """
+    d = main_dict.copy()
+    for key in keys:
+        if isinstance(d, dict):
+            d = d.get(key, None)
+            if d is None:
+                return default
+    return d
+
+
 def substring_matcher(string: str, strings_to_search: list[str]) -> str:
     """Finds the best match for a string from a list of strings using fuzzy matching.
 

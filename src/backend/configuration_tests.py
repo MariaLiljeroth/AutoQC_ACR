@@ -1,7 +1,7 @@
 """
 configuration_tests.py
 
-This script contains backend functions to test the configuration settings of AutoQC_ACR before the actual tasks
+This script contains backend functions to test the configuration settings of AutoQC_ACR before the actual Hazen jobs
 start running. This ensures that results are accurate and unexpected erros are not thrown mid task runtime.
 
 Written by Nathan Crossley 2025.
@@ -25,8 +25,8 @@ def file_structure_problems_exist(
     running process can then be cancelled.
 
     Args:
-        in_subdirs (list[Path]): List of input subdirectories taken from GUI configuration frame.
-        tasks_to_run (list[str]): List of Hazen tasks to run, taken from GUI configuration frame.
+        in_subdirs (list[Path]): List of input subdirectories taken from GUI configuration page.
+        tasks_to_run (list[str]): List of Hazen tasks to run, taken from GUI configuration page.
 
     Returns:
         str: String error to be displayed to the user.

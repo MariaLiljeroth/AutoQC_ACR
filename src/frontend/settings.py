@@ -12,3 +12,8 @@ FONT_TEXT = ("Segoe UI", 11)
 
 # Defines the font and size for titles.
 FONT_TITLE = ("Segoe UI", 14, "bold", "underline")
+
+# Define small medium and large padding for laying out tk widgets.
+PAD_SMALL = 5
+PAD_MEDIUM = 10
+PAD_LARGE = 15

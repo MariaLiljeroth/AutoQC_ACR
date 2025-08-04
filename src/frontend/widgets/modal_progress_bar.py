@@ -1,7 +1,7 @@
 """
-progress_bar_modal.py
+modal_progress_bar.py
 
-This script defines the ProgressBarModal class, which can be initialised to create a modal progress bar.
+This script defines the ModalProgressBar class, which can be initialised to create a modal progress bar.
 This progress bar is needed for tasks that cannot run in the background, i.e. those that must be completed
 before the user continues within the GUI (e.g. DICOM sorting).
 
@@ -13,7 +13,7 @@ import tkinter as tk
 from tkinter import ttk
 
 
-class ProgressBarModal(tk.Toplevel):
+class ModalProgressBar(tk.Toplevel):
     """Modal window to display progress of a compulsory task whilst grabbing focus
     to prevent user interacting further with the GUI. Inherits from tk.Toplevel.
     """
@@ -23,7 +23,7 @@ class ProgressBarModal(tk.Toplevel):
         master: tk.Tk,
         task_name: str,
     ):
-        """Initialises ProgressBarModal by configuring window settings, creating
+        """Initialises ModalProgressBar by configuring window settings, creating
         and laying out widgets and grabbing the GUI focus.
 
         Args:

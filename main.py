@@ -12,6 +12,7 @@ import sys
 import multiprocessing as mp
 import matplotlib
 
+# use Agg backend as non interactive backend required for multiprocessing
 matplotlib.use("Agg")
 
 from src.frontend.app import App
