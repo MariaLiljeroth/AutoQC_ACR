@@ -1,4 +1,5 @@
 from copy import deepcopy
+import numbers
 import numpy as np
 
 from reportlab.lib import colors
@@ -23,7 +24,7 @@ class ReportGenerator:
 
     REPORT_NAME = "AQA_Report.pdf"
     STYLES = getSampleStyleSheet()
-    LOGO_PATH = "src/backend/report_tools/assets/RoyalSurreyLogo.png"
+    LOGO_PATH = "src/backend/report_tools/assets/royal_surrey_logo.png"
 
     DEPARTMENT_NAME = "Regional Radiation Protection Service"
     DEPARTMENT_INFO = "Research & Oncology Suite, Royal Surrey County Hospital Guildford Surrey GU2 7XX Tel: 01483 408395 Email:rsc-tr.RadProt@nhs.net"
@@ -51,7 +52,7 @@ class ReportGenerator:
             ["measurement", "Diagonal distance SW"],
         ],
         "Uniformity": [["measurement", "integral uniformity %"]],
-        "Spatial Resolution": [[]],
+        "Spatial Resolution": [["measurement", "mtf50"]],
     }
 
     BULLET_KWARGS = {
@@ -101,10 +102,11 @@ class ReportGenerator:
     TRUE_SLICE_THICKNESS = 5  # mm
     TRUE_PHANTOM_DIAMETER = 173  # mm
 
-    def __init__(self, results, baselines, field_strength):
+    def __init__(self, results, baselines, field_strength, out_dir):
         self.results = results
         self.baselines = baselines
         self.field_strength = field_strength
+        self.out_dir = out_dir
         self.story = []
 
         self.thresholds = {
@@ -120,7 +122,8 @@ class ReportGenerator:
         for task in self.results:
             self.add_section(task)
 
-        doc = SimpleDocTemplate(self.REPORT_NAME, pagesize=letter)
+        report_path = self.out_dir / self.REPORT_NAME
+        doc = SimpleDocTemplate(str(report_path.resolve()), pagesize=letter)
         doc.build(self.story)
 
         print("✅ PDF created !")
@@ -146,7 +149,7 @@ class ReportGenerator:
     def add_section(self, task):
         matrix = self.extract_task_matrix(task)
         table_data = self.get_table_data(task, matrix)
-        self.build_metric_section(task, matrix, table_data)
+        self.build_metric_section(task, table_data)
 
     def extract_task_matrix(self, task):
         deep_keys = self.DEEP_KEYS[task]
@@ -192,7 +195,7 @@ class ReportGenerator:
                 perc_diff_from_baseline = round(
                     float(
                         self.calc_deviation_row_mean_from_val(
-                            matrix, row_idx, baseline, "percentage"
+                            matrix, row_idx, baseline, representation="percentage"
                         )
                     ),
                     2,
@@ -203,7 +206,10 @@ class ReportGenerator:
                 deviation = round(
                     float(
                         self.calc_deviation_row_mean_from_val(
-                            matrix, row_idx, self.TRUE_PHANTOM_DIAMETER, "absolute"
+                            matrix,
+                            row_idx,
+                            self.TRUE_PHANTOM_DIAMETER,
+                            representation="absolute",
                         )
                     )
                 )
@@ -212,10 +218,18 @@ class ReportGenerator:
             elif task == "Uniformity":
                 row_extension = []
 
+            elif task == "Spatial Resolution":
+                row_extension = []
+
             full_row = row_basic + row_extension
             table_data.append(full_row)
 
-        return table_data
+        formatted_table_data = [
+            [f"{cell:.2f}" if isinstance(cell, numbers.Real) else cell for cell in row]
+            for row in table_data
+        ]
+
+        return formatted_table_data
 
     @staticmethod
     def get_table_header(task):
@@ -234,14 +248,21 @@ class ReportGenerator:
         return final_header
 
     def get_basic_row_data(self, matrix, row_idx, coil_id):
+        matrix_row = matrix[row_idx, :3]
+
+        # if still an iterable, average (for Geometric Accuracy) - would be better to adjust raw hazen output but don't have time.
+        if isinstance(matrix_row[0], (list, tuple, np.ndarray)):
+            matrix_row = [np.mean(x) for x in matrix_row]
+
         basic_row_data = [
             Paragraph(f"<b>{self.COIL_DESCRIPTIONS[coil_id]}</b>"),
-            *matrix[row_idx, :3],
-            np.nanmean(matrix[row_idx, :]),
+            *matrix_row,
+            np.nanmean(matrix_row),
         ]
 
         return basic_row_data
 
+    @staticmethod
     def calc_deviation_row_mean_from_val(
         matrix, row, reference_val, representation="absolute"
     ):
@@ -305,13 +326,15 @@ class ReportGenerator:
                     cell_coords = (-1, row_idx)
 
                     # Comparison condition
-                    if THRESHOLD_CONDITIONS[task] == ">" and abs(value) > threshold:
+                    if (
+                        THRESHOLD_CONDITIONS[task] == ">" and abs(value) > threshold
+                    ) or (THRESHOLD_CONDITIONS[task] == "<" and abs(value) < threshold):
                         table_style.add(
                             "BACKGROUND", cell_coords, cell_coords, colors.salmon
                         )
                     else:
                         table_style.add(
-                            "BACKGROUND", cell_coords, cell_coords, colors.light_green
+                            "BACKGROUND", cell_coords, cell_coords, colors.lightgreen
                         )
                 except Exception:
                     continue

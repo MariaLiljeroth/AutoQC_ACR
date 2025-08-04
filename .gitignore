@@ -7,4 +7,5 @@ test_data/
 *.xlsx
 *.pyc
 *.db
+*.pdf
 debug.png

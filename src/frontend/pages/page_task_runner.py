@@ -19,9 +19,9 @@ from src.frontend.settings import FONT_TEXT, FONT_TITLE, PAD_LARGE, PAD_MEDIUM
 
 from src.backend.run_all_jobs import run_all_jobs
 from src.backend.log_tools.log_constructor import LogConstructor
-from src.backend.report_tools.create_pdf_report import generate_pdf_report
+from src.backend.report_tools.report_generator import ReportGenerator
 
-from src.shared.queueing import QueueTrigger
+from src.shared.queueing import get_queue, QueueTrigger
 
 
 class PageTaskRunner(tk.Frame):
@@ -184,10 +184,11 @@ class PageTaskRunner(tk.Frame):
             self.app_state.results = trigger.data
 
             # create an instance of class for constructing log
-            dfc = LogConstructor(self.app_state.results, self.app_state.log_path)
+            lc = LogConstructor(self.app_state.results, self.app_state.log_path)
 
             # start the construction process in a separate thread to avoid blocking gui (main thread)
-            threading.Thread(target=dfc.run).start()
+            thread_lc = threading.Thread(target=lc.run)
+            thread_lc.start()
 
             # get field strength
             test_subdir = self.app_state.in_subdirs[0]
@@ -198,7 +199,23 @@ class PageTaskRunner(tk.Frame):
                 field_strength = float(field_strength)
 
             # also construct report
-            threading.Thread(
-                target=generate_pdf_report,
-                args=(self.app_state.results, self.app_state.baselines, field_strength),
-            ).start()
+            rg = ReportGenerator(
+                self.app_state.results,
+                self.app_state.baselines,
+                field_strength,
+                self.app_state.out_dir,
+            )
+            thread_rg = threading.Thread(target=rg.run)
+            thread_rg.start()
+
+            # wait till threads have joined and send trigger to quit app
+            timeout = 10
+            thread_lc.join(timeout)
+            thread_rg.join(timeout)
+
+            if thread_lc.is_alive():
+                print("Warning: Log Construction thread still alive after timeout!")
+            if thread_rg.is_alive():
+                print("Warning: Report Generator thread still alive after timeout!")
+
+            get_queue().put(QueueTrigger("QUIT_APPLICATION"))

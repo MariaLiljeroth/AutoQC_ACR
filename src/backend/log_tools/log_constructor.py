@@ -60,9 +60,6 @@ class LogConstructor:
             self.log_path, header=False, index=False, sheet_name="Sheet1"
         )
 
-        # send app quitting trigger via queue.
-        get_queue().put(QueueTrigger("QUIT_APPLICATION", master_df))
-
     def construct_df_for_task(self, task: str) -> pd.DataFrame:
         """Constructs a DataFrame for a specific Hazen task.
 
