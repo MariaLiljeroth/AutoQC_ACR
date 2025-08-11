@@ -78,9 +78,10 @@ class ACRSpatialResolution(HazenTask):
         try:
             # get mtf of chosen dcm and mask
             mtf50 = self.get_mtf50(mtf_dcm, mask)
-
+            mtf50_corr=1/(2*mtf50)
             # append results to the results dict
-            results["measurement"] = {"mtf50": mtf50}
+            # results["measurement"] = {"mtf50": mtf50}
+            results["measurement"] = {"mtf50": mtf50_corr}
 
             # signal to user that the spatial resolution has been calculated for given dcm
             print(f"{self.img_desc(mtf_dcm)}: Spatial resolution calculated.")
@@ -441,10 +442,10 @@ class ACRSpatialResolution(HazenTask):
             p0=[np.ptp(self.esf[1]), np.min(self.esf[1]), 1, np.median(self.esf[0])],
             maxfev=2500,
         )
-
+        
         # get equally-spaced x array across raw input x-range
         x_range = np.linspace(self.esf[0][0], self.esf[0][-1], 1000)
-
+    
         # construct fitted esf using x_range and applying analytical esf to it, with optimized params
         esf_fitted = np.array(
             [
@@ -452,7 +453,7 @@ class ACRSpatialResolution(HazenTask):
                 esf_func(x_range, *popt),
             ]
         )
-
+        print(popt) 
         return esf_fitted
 
     def get_lsf(self, esf: np.ndarray) -> np.ndarray:

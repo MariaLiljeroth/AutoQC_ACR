@@ -3,6 +3,7 @@ import numbers
 import sys
 import numpy as np
 from pathlib import Path
+from decimal import *
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -45,7 +46,7 @@ class ReportGenerator:
             ("BACKGROUND", (0, 0), (-1, 0), colors.grey),  # Header background
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),  # Header text color
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # Center alignment
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),  # Header font
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica"),  # Header font
             ("FONTSIZE", (0, 0), (-1, 0), 9),  # Font size
             ("BOTTOMPADDING", (0, 0), (-1, 0), 9),  # Header padding
             ("BACKGROUND", (0, 1), (-1, -1), colors.white),  # Body background
@@ -77,9 +78,9 @@ class ReportGenerator:
     SUBTITLES = {
         "Slice Thickness": "This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with IPEM report 112, variations of less than 0.7 mm for a prescribed slice thickness of 5 mm is acceptable. If measurements fall outside of this tolerance, this implies an issue with:",
         "SNR": "This measurement gives an indication as to the overall performance of the scanner. <br/> In accordance with IPEM report 112, variations of less than 10 % are considered acceptable. <br/><br/> If measurements fall outside of this tolerance, this implies either an inconsistency in acquisition parameters, uneven loading or a genuine issue with the scanner. If determined to be a genuine issue with the scanner, a decrease in SNR can be indicative of: ",
-        "Geometric Accuracy": "PLACEHOLDER SUBTITLE",
+        "Geometric Accuracy": "This measurement gives an indication, primarily, as to the performance of the imaging gradients. Poor geometric accuracy will cause image distortions such as edge warping. A decrease in geometric accuracy is indicative of: ",
         "Uniformity": "This measurement gives an indication as to the overall performance of the imaging gradients and the homogeneity of the main magnetic field. <br/> In accordance with the ACR Phantom Test Guidance PIU should be greater than or equal to 87.5% for MRI systems with field strengths less than 3 Tesla. PIU should be greater than or equal to 82.0% for MRI systems with field strength of 3 Tesla.If measurements fall outside of this tolerance, this implies an issue with: ",
-        "Spatial Resolution": "PLACEHOLDER SUBTITLE",
+        "Spatial Resolution": "This measurement gives an indication as to the ability of the scanner to image subtle anatomical features by assessing the in-plane resolution. It is important to note that deviations to this may be caused by partial voluming due to non-isotropic voxels although this should cause no more than a small deviation to the results and is considered acceptable at clinical field strengths at or less than 3T. This test estimates the modulation transfer function and the measured effective resolution. An increase in this measurement implies:",
     }
 
     BULLET_POINTS = {
@@ -96,9 +97,8 @@ class ReportGenerator:
             "Uneven or incomplete loading",
         ],
         "Spatial Resolution": [
-            "PLACEHOLDER BULLET POINT",
-            "PLACEHOLDER BULLET POINT",
-            "PLACEHOLDER BULLET POINT",
+            "Imaging gradient non-linearity",
+            "Poor B0 shim"
         ],
     }
 
@@ -214,8 +214,7 @@ class ReportGenerator:
                 row_extension = [baseline, perc_diff_from_baseline]
 
             elif task == "Geometric Accuracy":
-                deviation = round(
-                    float(
+                deviation =float(
                         self.calc_deviation_row_mean_from_val(
                             matrix,
                             row_idx,
@@ -223,8 +222,8 @@ class ReportGenerator:
                             representation="absolute",
                         )
                     )
-                )
-                row_extension = [deviation]
+                
+                row_extension = [round(deviation,2)]
 
             elif task == "Uniformity":
                 row_extension = []
@@ -278,9 +277,11 @@ class ReportGenerator:
         matrix, row, reference_val, representation="absolute"
     ):
         row_average = np.nanmean(matrix[row, :])
-        deviation = row_average - reference_val
+        
+        deviation = row_average - reference_val       
         if representation == "absolute":
-            deviation = abs(deviation)
+            # deviation = abs(deviation)
+            deviation = deviation
         elif representation == "percentage":
             deviation = np.abs(deviation / reference_val) * 100
         else:
@@ -298,7 +299,7 @@ class ReportGenerator:
         self.story.append(
             Paragraph(f"<font size=16><b>{task}</b></font>", self.STYLES["Normal"])
         )
-        self.story.append(Spacer(1, 12))
+        self.story.append(Spacer(1, 20))
 
         # Section subtitle
         self.story.append(
