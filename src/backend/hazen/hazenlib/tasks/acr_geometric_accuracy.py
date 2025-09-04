@@ -109,7 +109,7 @@ class ACRGeometricAccuracy(HazenTask):
         # get orthognal and diagonal lengths from mask
         length_dict = self.measure_orthogonal_lengths(mask)
         length_dict |= self.measure_diagonal_lengths(mask)
-
+        print(length_dict)
         if self.report:
             import matplotlib.pyplot as plt
 
@@ -181,7 +181,7 @@ class ACRGeometricAccuracy(HazenTask):
             length_dict["Diagonal Distance 1"],
             length_dict["Diagonal Distance 2"],
         )
-
+        
     def measure_orthogonal_lengths(self, mask: SliceMask) -> dict:
         """Measures orthogonal lengths for a given dcm mask.
         This is achieved by taking an on-axis bounding box about
@@ -221,43 +221,121 @@ class ACRGeometricAccuracy(HazenTask):
         }
 
         return length_dict
-
     def measure_diagonal_lengths(self, mask: SliceMask) -> dict:
-        """Measures diagonal lengths for a given dcm mask.
-        This is achieved by rotating the mask by 45 degrees
-        and repeating the on-axis analysis.
+    # """
+    # Measures diagonal lengths for a given dcm mask by working entirely in the
+    # original image frame. This avoids rotating the raster and the inaccuracies
+    # that rotation+bounding-box can introduce.
 
-        Args:
-            mask (SliceMask): Mask to use for geometric accuracy calculations
+    # Returns a dict with the SAME keys as the original implementation:
+    #   "Diagonal Start 1", "Diagonal End 1", "Diagonal Distance 1",
+    #   "Diagonal Start 2", "Diagonal End 2", "Diagonal Distance 2"
+    # """
 
-        Returns:
-            dict: Dictionary containing the two diagonal start points, end points and distances.
-        """
+        # Ensure binary uint8 mask for contour extraction
+        m = (mask.elliptical_mask > 0).astype(np.uint8)
 
-        # rotate mask by 45 degrees to measure diagonal distances
-        mask_45 = mask.get_rotated_mask(45)
+        # find contours (use CHAIN_APPROX_NONE to get full contour points)
+        contours, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if not contours:
+            raise RuntimeError("No contour found in elliptical_mask")
 
-        # measured orthogonal distances of rotated mask (i.e. diagonal distances)
-        length_dict_diag = self.measure_orthogonal_lengths(mask_45)
+        # pick the largest contour by area/length
+        contour = max(contours, key=lambda c: c.shape[0])
+        # contour points come as [[x,y]], so reshape to (N,2)
+        pts = contour.reshape(-1, 2).astype(float)  # (x, y) order
 
-        # adjust keys of new dict to reflect diagonal distances
-        # transform points back to un-rotated reference frame before assigning to keys
+        # Two diagonal direction vectors in pixel coordinate space:
+        # Diagonal 1 corresponds to rotated-mask horizontal axis (45°),
+        # i.e. vector (1, 1) in (x,y) pixel coords.
+        # Diagonal 2 corresponds to rotated-mask vertical axis (135°),
+        # i.e. vector (-1, 1).
+        v1 = np.array([1.0, 1.0])
+        v2 = np.array([-1.0, 1.0])
 
-        key_pairs = (
-            ("Diagonal Start 1", "Horizontal Start"),
-            ("Diagonal End 1", "Horizontal End"),
-            ("Diagonal Distance 1", "Horizontal Distance"),
-            ("Diagonal Start 2", "Vertical Start"),
-            ("Diagonal End 2", "Vertical End"),
-            ("Diagonal Distance 2", "Vertical Distance"),
-        )
+        # projections onto v1 and v2
+        proj1 = pts.dot(v1)  # scalar projection (ordering only)
+        proj2 = pts.dot(v2)
 
-        for new_key, old_key in key_pairs:
-            val = length_dict_diag.pop(old_key)
-            length_dict_diag[new_key] = (
-                val
-                if isinstance(val, (int, float))
-                else mask_45.transform_point_to_orig_frame(val)
-            )
+        # find extreme points along each diagonal direction
+        idx_min1 = int(np.argmin(proj1))
+        idx_max1 = int(np.argmax(proj1))
+        idx_min2 = int(np.argmin(proj2))
+        idx_max2 = int(np.argmax(proj2))
 
-        return length_dict_diag
+        p1_start = tuple(map(float, pts[idx_min1]))  # (x, y)
+        p1_end = tuple(map(float, pts[idx_max1]))
+        p2_start = tuple(map(float, pts[idx_min2]))
+        p2_end = tuple(map(float, pts[idx_max2]))
+
+        # convert to mm using pixel spacing (dx, dy)
+        dx, dy = self.ACR_obj.pixel_spacing
+
+        def phys(pt):
+            return (pt[0] * dx, pt[1] * dy)
+
+        p1s_mm = phys(p1_start)
+        p1e_mm = phys(p1_end)
+        p2s_mm = phys(p2_start)
+        p2e_mm = phys(p2_end)
+
+        def euclid(a, b):
+            return float(np.hypot(b[0] - a[0], b[1] - a[1]))
+
+        diag1 = euclid(p1s_mm, p1e_mm)
+        diag2 = euclid(p2s_mm, p2e_mm)
+
+        return {
+            "Diagonal Start 1": p1_start,
+            "Diagonal End 1": p1_end,
+            "Diagonal Distance 1": diag1,
+            "Diagonal Start 2": p2_start,
+            "Diagonal End 2": p2_end,
+            "Diagonal Distance 2": diag2,
+        }
+ 
+    # def measure_diagonal_lengths(self, mask: SliceMask) -> dict:
+    #     """Measures diagonal lengths for a given dcm mask.
+    #     This is achieved by rotating the mask by 45 degrees
+    #     and repeating the on-axis analysis.
+
+    #     Args:
+    #         mask (SliceMask): Mask to use for geometric accuracy calculations
+
+    #     Returns:
+    #         dict: Dictionary containing the two diagonal start points, end points and distances.
+    #     """
+
+    #     # rotate mask by 45 degrees to measure diagonal distances
+    #     mask_45 = mask.get_rotated_mask(45)
+
+    #     import matplotlib
+    #     matplotlib.use("TkAgg")  # or "Qt5Agg", depending on your system
+    #     import matplotlib.pyplot as plt
+    #     plt.ion()
+    #     fig, (ax1,ax2)=plt.subplots(1,2) ; ax1.imshow(mask), ax2.imshow(mask_45); plt.show() #ML messing around
+     
+    #     # measured orthogonal distances of rotated mask (i.e. diagonal distances)
+    #     length_dict_diag = self.measure_orthogonal_lengths(mask_45)
+
+    #     # adjust keys of new dict to reflect diagonal distances
+    #     # transform points back to un-rotated reference frame before assigning to keys
+
+    #     key_pairs = (
+    #         ("Diagonal Start 1", "Horizontal Start"),
+    #         ("Diagonal End 1", "Horizontal End"),
+    #         ("Diagonal Distance 1", "Horizontal Distance"),
+    #         ("Diagonal Start 2", "Vertical Start"),
+    #         ("Diagonal End 2", "Vertical End"),
+    #         ("Diagonal Distance 2", "Vertical Distance"),
+    #     )
+
+    #     for new_key, old_key in key_pairs:
+    #         val = length_dict_diag.pop(old_key)
+    #         length_dict_diag[new_key] = (
+    #             val
+    #             if isinstance(val, (int, float))
+    #             else mask_45.transform_point_to_orig_frame(val)
+    #         )
+
+    #     return length_dict_diag

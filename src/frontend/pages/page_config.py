@@ -337,7 +337,12 @@ class PageConfig(tk.Frame):
         # get input and output directories from relevant entry widgets
         in_dir = Path(self.entry_in_dir.get())
         out_dir = Path(self.entry_out_dir.get())
-
+        
+            # ✅ ensure output directory exists
+        # print("this is happening"+str(out_dir))
+        # out_dir.mkdir(parents=True, exist_ok=True)
+        # if out_dir.exists():
+        #     print("Exists")
         # construct input subdirectories from in_dir and relevant listbox
         in_subdirs = [
             in_dir / selection
@@ -376,16 +381,17 @@ class PageConfig(tk.Frame):
         out_subdirs = self.app_state.out_subdirs
         tasks_to_run = self.app_state.tasks_to_run
         baselines = self.app_state.baselines
+        print(str(out_dir.exists())+" exists?") #ML sadeed
 
         # quit if in_dir is "." (the fallback option from gui) or if its not a directory.
         if str(in_dir) == "." or not in_dir.is_dir() or not in_dir.exists():
             tk.messagebox.showerror("Error", "Input directory is invalid!")
             return False
 
-        # quit if out_dir is "." (the fallback option from gui) or if its not a directory.
-        if str(out_dir) == "." or not out_dir.is_dir():
-            tk.messagebox.showerror("Error", "Output directory is invalid!")
-            return False
+        # # quit if out_dir is "." (the fallback option from gui) or if its not a directory.
+        # if str(out_dir) == "." or not out_dir.is_dir():
+        #     tk.messagebox.showerror("Error", "Output directory is invalid!")
+        #     return False
 
         # quit if no subdirectories selected.
         if not in_subdirs:
@@ -405,7 +411,7 @@ class PageConfig(tk.Frame):
         # quit if any problems with file structure.
         if file_structure_problems_exist(in_subdirs, tasks_to_run):
             return False
-
+        
         # if out_dir doesn't exist, ask user whether they want to proceed
         elif not out_dir.exists():
             proceed = tk.messagebox.askyesno(
