@@ -12,6 +12,10 @@ from pathlib import Path
 from collections import defaultdict
 from thefuzz import fuzz
 import pydicom
+import csv
+from collections import defaultdict
+from typing import Any, List
+
 
 
 def nested_dict() -> defaultdict:
@@ -37,7 +41,6 @@ def defaultdict_to_dict(d: defaultdict) -> dict:
         return {k: defaultdict_to_dict(v) for k, v in d.items()}
     return d
 
-
 def chained_get(main_dict: dict, *keys, default: any = "N/A") -> any:
     """Safe getter for nested results dict.
     Iterates through keys and returns the value at the end of the chain if it exists.
@@ -57,6 +60,41 @@ def chained_get(main_dict: dict, *keys, default: any = "N/A") -> any:
             if d is None:
                 return default
     return d
+
+# utils.py
+
+
+def dump_nested_dict_to_csv(d: dict, out_subdir: Path, filename: str = "results_dump.csv"):
+    """
+    Dumps a nested dictionary to a CSV file.
+    Nested keys are flattened into columns; lists or arrays are expanded.
+    The CSV is saved one level up from out_subdir.
+    """
+    def flatten(prefix: List[str], value: Any, rows: List[List[Any]]):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                flatten(prefix + [k], v, rows)
+        elif isinstance(value, list):
+            rows.append(prefix + value)
+        else:
+            rows.append(prefix + [value])
+
+    rows: List[List[Any]] = []
+    flatten([], d, rows)
+
+    max_depth = max(len(row) for row in rows)
+    header = [f"Level_{i+1}" for i in range(max_depth - 1)] + ["Value"]
+    padded_rows = [row + [""] * (max_depth - len(row)) for row in rows]
+
+    parent_dir = Path(out_subdir).parent
+    csv_path = parent_dir / filename
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(padded_rows)
+
+    print(f"Nested dictionary successfully dumped to CSV at: {csv_path}")
 
 
 def substring_matcher(string: str, strings_to_search: list[str]) -> str:
