@@ -184,7 +184,9 @@ class PageTaskRunner(tk.Frame):
             self.app_state.results = trigger.data
 
             # create an instance of class for constructing log
-            lc = LogConstructor(self.app_state.results, self.app_state.log_path)
+            lc = LogConstructor(
+                self.app_state.results, self.app_state.log_path, self.app_state.expected_coils
+            )
 
             # start the construction process in a separate thread to avoid blocking gui (main thread)
             thread_lc = threading.Thread(target=lc.run)
@@ -205,6 +207,7 @@ class PageTaskRunner(tk.Frame):
                 self.app_state.baselines,
                 field_strength,
                 self.app_state.out_dir,
+                coils=self.app_state.expected_coils,
             )
             thread_rg = threading.Thread(target=rg.run)
             thread_rg.start()

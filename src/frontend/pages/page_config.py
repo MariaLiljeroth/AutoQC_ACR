@@ -124,6 +124,10 @@ class PageConfig(tk.Frame):
         self.checkbutton_panel_tasks = CheckbuttonPanel(
             self, checkbutton_names=AVAILABLE_TASKS
         )
+        # checkbutton panel for user to select which coils to include
+        self.checkbutton_panel_coils = CheckbuttonPanel(
+            self, checkbutton_names=EXPECTED_COILS, pady=5
+        )
 
     def _create_buttons(self):
         """Creates all buttons required for this page."""
@@ -161,14 +165,19 @@ class PageConfig(tk.Frame):
     def _create_tables(self):
         """Create all tables required for this page."""
 
-        # table to allow user to enter baseline values.
-        uniformity_header = AVAILABLE_TASKS[3]
+        # table to allow user to enter SNR baseline values.
         snr_header = AVAILABLE_TASKS[1]
+
+        # determine selected coils (checkbuttons default to checked)
+        try:
+            coil_names = self.checkbutton_panel_coils.get_selected_items()
+        except Exception:
+            coil_names = EXPECTED_COILS
 
         self.table_baselines = SimpleTable(
             self,
-            [snr_header, uniformity_header],
-            EXPECTED_COILS,
+            [snr_header],
+            coil_names,
             border_pad=PAD_LARGE,
             bd=1,
             relief=tk.SOLID,
@@ -206,8 +215,15 @@ class PageConfig(tk.Frame):
         self.label_select_tasks.grid(
             row=4, column=0, sticky="nw", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
-        self.label_input_baselines.grid(
+        # label for coil selection
+        self.label_select_coils = tk.Label(
+            self, text="Select coils to include:", font=FONT_TEXT
+        )
+        self.label_select_coils.grid(
             row=5, column=0, sticky="nw", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
+        )
+        self.label_input_baselines.grid(
+            row=6, column=0, sticky="nw", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
 
     def _layout_entries(self):
@@ -230,6 +246,9 @@ class PageConfig(tk.Frame):
         self.checkbutton_panel_tasks.grid(
             row=4, column=1, sticky="w", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
+        self.checkbutton_panel_coils.grid(
+            row=5, column=1, sticky="w", padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
+        )
 
     def _layout_buttons(self):
         """Layout all buttons for this page."""
@@ -237,12 +256,12 @@ class PageConfig(tk.Frame):
         self.button_browse_out_dir.grid(
             row=2, column=2, sticky="w", pady=(0, PAD_LARGE)
         )
-        self.button_run.grid(row=6, column=0, columnspan=3, sticky="ew", padx=50)
+        self.button_run.grid(row=7, column=0, columnspan=3, sticky="ew", padx=50)
 
     def _layout_tables(self):
         """Layout all tables for this page."""
         self.table_baselines.grid(
-            row=5, column=1, padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
+            row=6, column=1, padx=(0, PAD_MEDIUM), pady=(0, PAD_LARGE)
         )
 
     def _configure_grid(self):
@@ -262,6 +281,7 @@ class PageConfig(tk.Frame):
         self.rowconfigure(4, weight=0, minsize=0)
         self.rowconfigure(5, weight=0, minsize=0)
         self.rowconfigure(6, weight=0, minsize=0)
+        self.rowconfigure(7, weight=0, minsize=0)
 
     def _browse_in_dir(self):
         """Asks user to choose an input directory (activated by a button).
@@ -355,8 +375,37 @@ class PageConfig(tk.Frame):
         # get all hazen tasks selected by user
         tasks_to_run = self.checkbutton_panel_tasks.get_selected_items()
 
-        # get baselines from table
-        baselines = self.table_baselines.get_current_state()
+        # get baselines from table (robust to empty/non-numeric entries)
+        try:
+            baselines = self.table_baselines.get_current_state()
+        except Exception:
+            import pandas as _pd
+            import numpy as _np
+
+            entries = self.table_baselines.entry_df
+            rows = list(entries.index)
+            cols = list(entries.columns)
+            data = []
+            for r in rows:
+                row_vals = []
+                for c in cols:
+                    try:
+                        val = entries.loc[r, c].get()
+                    except Exception:
+                        val = ""
+                    try:
+                        num = float(val)
+                    except (TypeError, ValueError):
+                        num = _np.nan
+                    row_vals.append(num)
+                data.append(row_vals)
+            baselines = _pd.DataFrame(data, index=rows, columns=cols)
+
+        # get selected coils from checkbutton panel and store
+        try:
+            selected_coils = self.checkbutton_panel_coils.get_selected_items()
+        except Exception:
+            selected_coils = EXPECTED_COILS
 
         # store all configuration settings in app state, so can be used within any page.
         self.app_state.in_dir = in_dir
@@ -365,6 +414,7 @@ class PageConfig(tk.Frame):
         self.app_state.out_subdirs = out_subdirs
         self.app_state.tasks_to_run = tasks_to_run
         self.app_state.baselines = baselines
+        self.app_state.expected_coils = selected_coils
 
     def _config_settings_valid(self) -> bool:
         """Checks whether all configuration settings in app state
@@ -403,9 +453,43 @@ class PageConfig(tk.Frame):
             tk.messagebox.showerror("Error", "No tasks selected!")
             return False
 
-        # quit if any baselines are missing
-        if (baselines == "").any().any():
-            tk.messagebox.showerror("Error", "Values missing in baseline table!")
+        # quit if any baselines are missing for selected coils
+        selected_coils = getattr(self.app_state, "expected_coils", EXPECTED_COILS)
+        # The baseline table uses rows as tasks (e.g. 'SNR') and columns as coils.
+        snr_row = AVAILABLE_TASKS[1]
+
+        # ensure the SNR row exists
+        if snr_row not in baselines.index:
+            tk.messagebox.showerror(
+                "Error", f"Baseline table missing expected row '{snr_row}'"
+            )
+            return False
+
+        # ensure all selected coils exist as columns in baselines
+        missing_cols = [c for c in selected_coils if c not in baselines.columns]
+        if missing_cols:
+            tk.messagebox.showerror(
+                "Error",
+                "Baseline columns missing for selected coils: " + ", ".join(missing_cols),
+            )
+            return False
+
+        # check for NaN values in the SNR row for selected coils only
+        subset = baselines.loc[snr_row, selected_coils]
+        # subset may be a Series if single row; convert to Series
+        import pandas as _pd
+
+        if isinstance(subset, _pd.DataFrame):
+            has_nan = subset.isnull().values.any()
+        else:
+            # Series
+            has_nan = subset.isnull().any()
+
+        if has_nan:
+            tk.messagebox.showerror(
+                "Error",
+                "Values missing in baseline table for selected coils!",
+            )
             return False
 
         # quit if any problems with file structure.

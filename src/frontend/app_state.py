@@ -29,3 +29,10 @@ class AppState:
         self.baselines = None
         self.log_path = None
         self.results = None
+        # List of coils to include in processing / reporting. Defaults to shared context EXPECTED_COILS.
+        try:
+            from src.shared.context import EXPECTED_COILS
+
+            self.expected_coils = EXPECTED_COILS
+        except Exception:
+            self.expected_coils = None

@@ -15,14 +15,14 @@ import pandas as pd
 
 from src.backend.utils import chained_get
 
-from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
+from src.shared.context import EXPECTED_ORIENTATIONS
 from src.shared.queueing import get_queue, QueueTrigger
 
 
 class LogConstructor:
     """Class to construct excel log from taskrunner results."""
 
-    def __init__(self, results: dict, log_path: Path):
+    def __init__(self, results: dict, log_path: Path, expected_coils: list[str] | None = None):
         """Initialises LogConstructor. Determines various
         instance attributes for convenience.
 
@@ -34,6 +34,10 @@ class LogConstructor:
         # define width of pandas df based on number of orientations
         self.width_df = len(EXPECTED_ORIENTATIONS) + 1
 
+        # determine coils to use
+        from src.shared.context import EXPECTED_COILS
+        self.expected_coils = expected_coils or EXPECTED_COILS
+
         # define a blank row
         self.blank_row = self.make_row(np.nan)
 
@@ -43,6 +47,7 @@ class LogConstructor:
         # store results and log path for convenience
         self.results = results
         self.log_path = log_path
+        
 
     def run(self):
         """Constructs a pd dataframe and saves it to an Excel file."""
@@ -69,7 +74,7 @@ class LogConstructor:
         Returns:
             pd.DataFrame: Constructed DataFrame for the task.
         """
-        coil_dfs = [self.construct_df_for_coil(task, coil) for coil in EXPECTED_COILS]
+        coil_dfs = [self.construct_df_for_coil(task, coil) for coil in self.expected_coils]
         blank_rows = [self.blank_row for _ in range(len(coil_dfs))]
 
         return pd.concat(list(chain.from_iterable(zip(coil_dfs, blank_rows)))[:-1])

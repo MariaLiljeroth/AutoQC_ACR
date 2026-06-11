@@ -30,7 +30,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 
 from src.backend.utils import chained_get
-from src.shared.context import EXPECTED_COILS, EXPECTED_ORIENTATIONS
+from src.shared.context import EXPECTED_ORIENTATIONS
 
 
 class ReportGenerator:
@@ -105,8 +105,6 @@ class ReportGenerator:
         "Flex": "Flexible Phased Array Anterior Coil",
     }
 
-    COIL_ROW_MAP = {"IB": 0, "HN": 1, "Flex": 2}
-
     TRUE_SLICE_THICKNESS = 5  # mm
     TRUE_PHANTOM_DIAMETER = 173  # mm
 
@@ -118,7 +116,7 @@ class ReportGenerator:
         "Spatial Resolution": [(-1, None)],
     }
 
-    def __init__(self, results, baselines, field_strength, out_dir):
+    def __init__(self, results, baselines, field_strength, out_dir, coils: list[str] | None = None):
         self.results = results
         self.baselines = baselines
         self.field_strength = field_strength
@@ -132,6 +130,12 @@ class ReportGenerator:
             "Uniformity": 82 if field_strength == 3 else 87.5,
             "Spatial Resolution": None,
         }
+
+        # default coils list will be populated by caller; fallback to shared context expected coils
+        from src.shared.context import EXPECTED_COILS
+        self.coils = coils or EXPECTED_COILS
+        # dynamic mapping from coil id to row index based on provided coils
+        self.COIL_ROW_MAP = {coil: i for i, coil in enumerate(self.coils)}
 
     def run(self):
         self.add_header()
@@ -166,9 +170,9 @@ class ReportGenerator:
             deep_keys = self.DEEP_KEYS[task]
             num_metrics = len(deep_keys)
 
-        data = np.full((len(EXPECTED_COILS), len(EXPECTED_ORIENTATIONS), num_metrics), np.nan)
+        data = np.full((len(self.coils), len(EXPECTED_ORIENTATIONS), num_metrics), np.nan)
 
-        for i, coil in enumerate(EXPECTED_COILS):
+        for i, coil in enumerate(self.coils):
             coil_dict = self.results.get(task, {}).get(coil, {})
             for j, orientation in enumerate(EXPECTED_ORIENTATIONS):
                 orient_dict = coil_dict.get(orientation, {})
@@ -344,7 +348,8 @@ class ReportGenerator:
         matrix_row = matrix[row_idx, :3]
         if isinstance(matrix_row[0], (list, tuple, np.ndarray)):
             matrix_row = [np.mean(x) for x in matrix_row]
-        return [Paragraph(f"<b>{self.COIL_DESCRIPTIONS[coil_id]}</b>"), *matrix_row, np.nanmean(matrix_row)]
+        coil_desc = self.COIL_DESCRIPTIONS.get(coil_id, coil_id)
+        return [Paragraph(f"<b>{coil_desc}</b>"), *matrix_row, np.nanmean(matrix_row)]
 
     @staticmethod
     def calc_deviation_row_mean_from_val(matrix, row, reference_val, representation="absolute"):

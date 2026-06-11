@@ -10,6 +10,7 @@ Written by Nathan Crossley 2025
 
 from pathlib import Path
 import pydicom
+import re
 
 from src.shared.queueing import get_queue, QueueTrigger
 from src.backend.utils import quick_check_dicom
@@ -18,17 +19,22 @@ from src.backend.utils import quick_check_dicom
 class DcmSorter:
     """Class to sort a directory of unsorted dicoms into separate folders
     based on their dicom tags (namely series description and series instance uid).
+    Series with trailing numbers (e.g., HN_Ax and HN_Ax2) are grouped together.
 
     Instance attributes:
         dir (Path): Directory containing DICOM files to sort.
         uid_suffix_mapper (dict[str, str]): Dictionary mapping SeriesInstanceUID tag to suffixes
             for sorted folders. Useful for Siemens scanners (SNR by subtraction)
-        tracked_series_descs (list[str]): List of SeriesDescription tag values that have been encountered
+        tracked_series_descs (list[str]): List of normalized SeriesDescription tag values that have been encountered
             during the sorting process.
     """
 
     # translation table to replace incompatible characters in file paths with underscores.
     TRANSLATION_TABLE = str.maketrans({c: "_" for c in '\\/:*?"<>|'})
+
+    def normalize_series_desc(self, series_desc: str) -> str:
+        """Normalize series description by removing trailing numbers for grouping similar series."""
+        return re.sub(r'\d+$', '', series_desc).strip()
 
     def __init__(self, dir: Path):
         """Initialises the DicomSorter class by setting up instance attributes.
@@ -70,11 +76,18 @@ class DcmSorter:
                 # clean series description tag with translation table to prevent file path errors and bugs
                 series_desc = series_desc.translate(self.TRANSLATION_TABLE)
 
+                # normalize series description to group similar series (e.g., HN_Ax and HN_Ax2)
+                normalized_desc = self.normalize_series_desc(series_desc)
+
                 # set up suffix that corresponds to specific uid
-                self.populate_uid_suffix_mapper(uid, series_desc)
+                self.populate_uid_suffix_mapper(uid, normalized_desc)
 
                 # construct subdir path to move dicom to using series description and assigned suffix
-                target_subdir = self.dir / series_desc / self.uid_suffix_mapper[uid]
+                suffix = self.uid_suffix_mapper[uid]
+                if suffix == "":
+                    target_subdir = self.dir / normalized_desc
+                else:
+                    target_subdir = self.dir / normalized_desc / suffix
 
             else:
                 # for invalid dicoms, move to miscellaneous subdir as clean solution
@@ -121,19 +134,19 @@ class DcmSorter:
 
         return dcm_paths
 
-    def populate_uid_suffix_mapper(self, uid: str, series_desc: str):
+    def populate_uid_suffix_mapper(self, uid: str, normalized_desc: str):
         """Populates the dict self.uid_suffix_mapper with a suffix corresponding
         to that particular uid.
 
         Args:
             uid (str): SeriesInstanceUID DICOM tag for specific dcm
-            series_desc (str): SeriesDescription DICOM tag for specific dcm
+            normalized_desc (str): Normalized SeriesDescription DICOM tag for specific dcm
         """
 
         # if series description not tracked yet, append to series description tracker
         # and update suffix mapper with a blank suffix
-        if series_desc not in self.tracked_series_descs:
-            self.tracked_series_descs.append(series_desc)
+        if normalized_desc not in self.tracked_series_descs:
+            self.tracked_series_descs.append(normalized_desc)
             self.uid_suffix_mapper[uid] = ""
 
         # otherwise add a "helper_data_set" suffix associated with that uid
