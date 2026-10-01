@@ -16,6 +16,60 @@ from src.shared.queueing import get_queue, QueueTrigger
 from src.backend.utils import quick_check_dicom
 
 
+def normalize_series_desc(series_desc: str) -> str:
+    """Normalize series descriptions for Philips-style duplicate acquisitions.
+
+    Numeric suffixes such as HN_Ax, HN_Ax2, HN_Ax_2, HN_Ax 2, HN_Ax-2,
+    HN_Ax #2 and HN_Ax (2) should be treated as the same underlying series.
+    Any other appendix text (e.g. HN_Ax_reacq or HN_Ax_repeat) should remain
+    distinct.
+    """
+    series_desc = (series_desc or "").strip()
+    if not series_desc:
+        return series_desc
+
+    normalized = re.sub(
+        r"(?:\s*[_\-#]*\(?\s*\d+\s*\)?\s*)$",
+        "",
+        series_desc,
+    ).strip()
+
+    if normalized:
+        return normalized.rstrip(" _-#()[]")
+
+    return series_desc
+
+
+def philips_series_root(series_desc: str) -> str:
+    """Legacy helper for matching numbered Philips series names."""
+    series_desc = (series_desc or "").strip()
+    if not series_desc:
+        return series_desc
+
+    root = re.sub(r"(?:\s*[_\-#]*\(?\s*\d+\s*\)?\s*)$", "", series_desc)
+    return root.rstrip(" _-#()[]").strip()
+
+
+def find_philips_helper_dir(base_dir: Path) -> Path | None:
+    """Legacy companion lookup used when a grouped Philips family is present."""
+    if not base_dir.exists() or not base_dir.is_dir():
+        return None
+
+    base_root = philips_series_root(base_dir.name)
+    if not base_root:
+        return None
+
+    for sibling in base_dir.parent.iterdir():
+        if not sibling.is_dir() or sibling.name == base_dir.name:
+            continue
+
+        sibling_root = philips_series_root(sibling.name)
+        if sibling_root == base_root and sibling.name != "helper_data_set":
+            return sibling
+
+    return None
+
+
 class DcmSorter:
     """Class to sort a directory of unsorted dicoms into separate folders
     based on their dicom tags (namely series description and series instance uid).
@@ -33,8 +87,17 @@ class DcmSorter:
     TRANSLATION_TABLE = str.maketrans({c: "_" for c in '\\/:*?"<>|'})
 
     def normalize_series_desc(self, series_desc: str) -> str:
-        """Normalize series description by removing trailing numbers for grouping similar series."""
-        return re.sub(r'\d+$', '', series_desc).strip()
+        """Normalize a series description for filesystem-safe storage.
+
+        We intentionally preserve the exact SeriesDescription value instead of
+        collapsing trailing numeric suffixes. This keeps separate Philips
+        acquisitions such as "FLEX_COR" and "FLEX_COR 2" in distinct folders,
+        which is the expected behavior for the sorter.
+
+        Philips subtraction logic should be handled explicitly elsewhere rather
+        than by silently merging acquisitions during the initial sort.
+        """
+        return (series_desc or "").strip()
 
     def __init__(self, dir: Path):
         """Initialises the DicomSorter class by setting up instance attributes.

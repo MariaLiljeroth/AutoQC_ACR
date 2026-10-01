@@ -55,8 +55,9 @@ class ACRSliceThickness(HazenTask):
                 key-value pairs, optionally path to the generated images
                 for visualisation.
         """
-        # Identify relevant slice, dcm and mask
-        target_slice = 0
+        # Identify relevant slice, dcm and mask for the slice-thickness task only.
+        # The main ACR stack remains in its original ordering for the other tasks.
+        target_slice = getattr(self.ACR_obj, "slice_thickness_idx", 0)
         dcm_slice_th = self.ACR_obj.dcms[target_slice]
         mask = self.ACR_obj.masks[target_slice]
 

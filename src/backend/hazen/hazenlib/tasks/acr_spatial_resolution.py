@@ -78,10 +78,7 @@ class ACRSpatialResolution(HazenTask):
         try:
             # get mtf of chosen dcm and mask
             mtf50 = self.get_mtf50(mtf_dcm, mask)
-            mtf50_corr=1/(2*mtf50)
-            # append results to the results dict
-            # results["measurement"] = {"mtf50": mtf50}
-            results["measurement"] = {"mtf50": mtf50_corr}
+            results["measurement"] = {"mtf50": mtf50}
 
             # signal to user that the spatial resolution has been calculated for given dcm
             print(f"{self.img_desc(mtf_dcm)}: Spatial resolution calculated.")
@@ -168,6 +165,9 @@ class ACRSpatialResolution(HazenTask):
         mtf50 = simple_interpolate(0.5, self.mtf_fitted[1], self.mtf_fitted[0])
         mtf05 = simple_interpolate(0.005, self.mtf_fitted[1], self.mtf_fitted[0])
 
+        # Convert from MTF50 (cycles/mm) to effective spatial resolution (mm/pixel)
+        spatial_resolution = 1 / mtf50 if mtf50 not in (0, 0.0) else np.nan
+
         # report images if requested
         if self.report:
             fig, axes = plt.subplots(4, 1, figsize=(8, 16))
@@ -244,7 +244,7 @@ class ACRSpatialResolution(HazenTask):
             plt.close()
             self.report_files.append(image_path)
 
-        return mtf50
+        return spatial_resolution
 
     def get_roi(
         self, mask: SliceMask

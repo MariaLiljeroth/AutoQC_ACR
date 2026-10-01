@@ -9,6 +9,7 @@ Written by Nathan Crossley, 2025.
 from pathlib import Path
 from itertools import chain
 import inspect
+import numbers
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,23 @@ from src.backend.utils import chained_get
 
 from src.shared.context import EXPECTED_ORIENTATIONS
 from src.shared.queueing import get_queue, QueueTrigger
+
+
+def _clean_numeric(value):
+    """Return a finite float or the default sentinel for missing values."""
+    if value is None:
+        return inspect.signature(chained_get).parameters["default"].default
+    if isinstance(value, str):
+        value = value.strip()
+        if value in {"", "N/A", "nan", "NaN", "None", "none"}:
+            return inspect.signature(chained_get).parameters["default"].default
+    if isinstance(value, numbers.Real) and np.isfinite(value):
+        return float(value)
+    try:
+        value = float(value)
+        return value if np.isfinite(value) else inspect.signature(chained_get).parameters["default"].default
+    except (TypeError, ValueError):
+        return inspect.signature(chained_get).parameters["default"].default
 
 
 class LogConstructor:
@@ -39,10 +57,10 @@ class LogConstructor:
         self.expected_coils = expected_coils or EXPECTED_COILS
 
         # define a blank row
-        self.blank_row = self.make_row(np.nan)
+        self.blank_row = self.make_row("")
 
         # define a row for the different orientations
-        self.orientations_header = self.make_row(np.nan, EXPECTED_ORIENTATIONS)
+        self.orientations_header = self.make_row("", EXPECTED_ORIENTATIONS)
 
         # store results and log path for convenience
         self.results = results
@@ -187,8 +205,8 @@ class LogConstructor:
             ):
                 snr, normalised_snr = pull_snr_values(smoothing=False)
 
-            snr = self.make_row("Image SNR", snr)
-            normalised_snr = self.make_row("Normalised SNR", normalised_snr)
+            snr = self.make_row("Image SNR", [_clean_numeric(x) for x in snr])
+            normalised_snr = self.make_row("Normalised SNR", [_clean_numeric(x) for x in normalised_snr])
             return snr, normalised_snr
 
         elif task == "Geometric Accuracy":
@@ -220,13 +238,17 @@ class LogConstructor:
                 try:
                     true_length = 173
                     length_quadruplet = list(length_quadruplet.values())
+                    numeric_lengths = [_clean_numeric(v) for v in length_quadruplet]
+                    numeric_lengths = [v for v in numeric_lengths if v != inspect.signature(chained_get).parameters["default"].default]
+                    if not numeric_lengths:
+                        raise ValueError
                     perc_differences = [
-                        (1 - length / true_length) * 100 for length in length_quadruplet
+                        (1 - length / true_length) * 100 for length in numeric_lengths
                     ]
                     av_perc_diff = np.mean(perc_differences)
-                    cv = np.std(length_quadruplet) / np.mean(length_quadruplet) * 100
+                    cv = np.std(numeric_lengths) / np.mean(numeric_lengths) * 100
                     return av_perc_diff, cv
-                except:
+                except Exception:
                     return [
                         inspect.signature(chained_get).parameters["default"].default
                     ] * 2
@@ -252,7 +274,7 @@ class LogConstructor:
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
-            uniformity = self.make_row("% Integral Uniformity", uniformity)
+            uniformity = self.make_row("% Integral Uniformity", [_clean_numeric(x) for x in uniformity])
             return uniformity
 
         elif task == "Spatial Resolution":
@@ -268,12 +290,12 @@ class LogConstructor:
             spatial_res = [
                 (
                     1 / mtf
-                    if isinstance(mtf, (int, float))
+                    if isinstance(mtf, (int, float)) and mtf not in (0, 0.0)
                     else inspect.signature(chained_get).parameters["default"].default
                 )
                 for mtf in mtf50
             ]
-            spatial_res = self.make_row("Spatial Resolution", spatial_res)
+            spatial_res = self.make_row("Spatial Resolution", [_clean_numeric(x) for x in spatial_res])
             return spatial_res
 
     def make_row(self, label: str, values: list = None) -> pd.DataFrame:
@@ -291,5 +313,21 @@ class LogConstructor:
         if not isinstance(values, (type(None), list)):
             raise TypeError("values attr should be list.")
         if values is None:
-            values = [np.nan for _ in range(self.width_df - 1)]
-        return pd.DataFrame([label] + values).T
+            values = ["" for _ in range(self.width_df - 1)]
+
+        cleaned_values = []
+        for value in values:
+            if value is None:
+                cleaned_values.append("")
+            elif isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}:
+                    cleaned_values.append("")
+                else:
+                    cleaned_values.append(value)
+            elif isinstance(value, (float, np.floating)):
+                cleaned_values.append("") if np.isnan(value) else cleaned_values.append(float(value))
+            else:
+                cleaned_values.append(value)
+
+        return pd.DataFrame([label] + cleaned_values).T

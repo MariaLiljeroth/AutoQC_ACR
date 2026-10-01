@@ -212,10 +212,27 @@ class SimpleTable(tk.Frame):
             pd.DataFrame: Current state of table.
         """
 
-        # map get func across entry dataframe to get dataframe of current entry values.
         vals = self.entry_df.map(lambda entry: entry.get())
 
+        def clean(value):
+            if value is None:
+                return None
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}:
+                    return None
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
         if self.force_numerical:
-            vals = vals.map(float)
+            vals = vals.map(clean)
 
         return vals

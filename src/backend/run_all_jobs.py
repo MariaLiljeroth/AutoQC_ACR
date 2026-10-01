@@ -15,7 +15,8 @@ import pydicom
 
 import multiprocessing as mp
 from multiprocessing.managers import BaseProxy
-from src.backend.utils import dump_nested_dict_to_csv
+import numpy as np
+from src.backend.utils import dump_nested_dict_to_csv, coerce_numeric
 
 from src.backend.mappings import TASK_STR_TO_CLASS, CLASS_STR_TO_TASK
 from src.backend.hazen.hazenlib.utils import get_dicom_files
@@ -28,6 +29,7 @@ from src.shared.context import (
     EXPECTED_COILS,
     IMPLEMENTED_MANUFACTURERS,
 )
+from src.backend.dcm_sorter import find_philips_helper_dir
 
 
 def run_all_jobs(
@@ -35,7 +37,7 @@ def run_all_jobs(
 ):
     """Runs all specified tasks on all input subdirectories, saving plots to the corresponding.
     output subdirectories. Utilises serial or multiprocessing depending on the number of CPU
-    cores available and how many Hazen jobs are requested.
+    cores compared to the number of Hazen jobs requested.
 
     For clarity, a "job" is defined by a specific set of args to run a task with, e.g. input and output
     subdirs, the specific task etc. A task is the specific Hazen task e.g. SNR, Uniformity etc.
@@ -139,7 +141,7 @@ def run_job(
     # visuals will be messed up
     if len(kwargs["input_data"]) != 11:
         print(
-            f"Warning: For {in_subdir.name}, {task} could not be calculated because {in_subdir.name} contains an unexpected number of DICOMs. Expected 11 but received {len(kwargs["input_data"])}."
+            f"Warning: For {in_subdir.name}, {task} could not be calculated because {in_subdir.name} contains an unexpected number of DICOMs. Expected 11 but received {len(kwargs['input_data'])}."
         )
         queue.put(QueueTrigger("PROGBAR_UPDATE_JOB_COMPLETED", perc))
         return None
@@ -149,18 +151,27 @@ def run_job(
     manufacturer_tag = pydicom.dcmread(kwargs["input_data"][0]).get("Manufacturer")
     manufacturer = substring_matcher(manufacturer_tag, IMPLEMENTED_MANUFACTURERS)
     if task == "SNR" and manufacturer == "Philips":
-        kwargs["subtract"] = helper_data_set
+        paired_dir = find_philips_helper_dir(in_subdir)
+        kwargs["subtract"] = paired_dir if paired_dir is not None else helper_data_set
 
     # map task string to associated class and instantiate, passing kwargs
-    task_obj = TASK_STR_TO_CLASS[task](**kwargs)
+    try:
+        task_obj = TASK_STR_TO_CLASS[task](**kwargs)
+        result = task_obj.run()
+    except Exception as exc:
+        result = {
+            "task": task,
+            "file": kwargs["input_data"][0] if kwargs["input_data"] else str(in_subdir),
+            "measurement": {},
+            "value": np.nan,
+            "error": str(exc),
+        }
+        print(f"Task {task} failed for {in_subdir.name}: {exc}")
 
-    # run job to get result
-    result = task_obj.run()
     print("Task:", task)
     print("Type of result:", type(result))
     print("Dir(result):", dir(result))
-    print("Repr(result):", repr(result)[:500])  # first 500 chars
-
+    print("Repr(result):", repr(result)[:500])
 
     # Update job running progress bar
     queue.put(QueueTrigger("PROGBAR_UPDATE_JOB_COMPLETED", perc))
@@ -174,23 +185,28 @@ def extract_scalar(subdict: dict, task_key: str):
     if task_key == "SNR":
         if "measurement" in subdict:
             meas = subdict["measurement"]
-            if "snr by subtraction" in meas:
-                return meas["snr by subtraction"].get("measured")
-            if "snr by smoothing" in meas:
-                return meas["snr by smoothing"].get("measured")
+            if isinstance(meas, dict):
+                if "snr by subtraction" in meas:
+                    return coerce_numeric(meas["snr by subtraction"].get("measured"))
+                if "snr by smoothing" in meas:
+                    return coerce_numeric(meas["snr by smoothing"].get("measured"))
         return None
 
-    # Generic case for other tasks
     if "measurement" in subdict:
         meas = subdict["measurement"]
         if isinstance(meas, dict):
             if "value" in meas:
-                return meas["value"]
+                return coerce_numeric(meas["value"])
             for key, value in meas.items():
-                if isinstance(value, (int, float)):
-                    return value
-                if isinstance(value, dict) and "measured" in value:
-                    return value["measured"]
+                if isinstance(value, dict):
+                    if "measured" in value:
+                        return coerce_numeric(value["measured"])
+                    if "value" in value:
+                        return coerce_numeric(value["value"])
+                elif isinstance(value, (int, float, np.floating, np.integer, str)):
+                    numeric = coerce_numeric(value)
+                    if not np.isnan(numeric):
+                        return numeric
     return None
 
 

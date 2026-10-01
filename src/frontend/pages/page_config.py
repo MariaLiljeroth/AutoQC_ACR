@@ -376,12 +376,20 @@ class PageConfig(tk.Frame):
         tasks_to_run = self.checkbutton_panel_tasks.get_selected_items()
 
         # get baselines from table (robust to empty/non-numeric entries)
+        import pandas as _pd
+        import numpy as _np
         try:
             baselines = self.table_baselines.get_current_state()
+            if baselines is not None:
+                baselines = baselines.applymap(
+                    lambda val: (
+                        float(val)
+                        if str(val).strip() not in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}
+                        and not _pd.isna(val)
+                        else _np.nan
+                    )
+                )
         except Exception:
-            import pandas as _pd
-            import numpy as _np
-
             entries = self.table_baselines.entry_df
             rows = list(entries.index)
             cols = list(entries.columns)
@@ -393,10 +401,14 @@ class PageConfig(tk.Frame):
                         val = entries.loc[r, c].get()
                     except Exception:
                         val = ""
-                    try:
-                        num = float(val)
-                    except (TypeError, ValueError):
+                    cleaned = str(val).strip() if val is not None else ""
+                    if cleaned in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}:
                         num = _np.nan
+                    else:
+                        try:
+                            num = float(cleaned)
+                        except (TypeError, ValueError):
+                            num = _np.nan
                     row_vals.append(num)
                 data.append(row_vals)
             baselines = _pd.DataFrame(data, index=rows, columns=cols)
@@ -484,6 +496,13 @@ class PageConfig(tk.Frame):
         else:
             # Series
             has_nan = subset.isnull().any()
+
+        # also reject any empty/invalid string-equivalent values that got through coercion
+        if isinstance(subset, _pd.Series):
+            invalid_mask = subset.map(
+                lambda v: _pd.isna(v) or str(v).strip() in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}
+            )
+            has_nan = has_nan or bool(invalid_mask.any())
 
         if has_nan:
             tk.messagebox.showerror(

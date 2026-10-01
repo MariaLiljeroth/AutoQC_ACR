@@ -28,6 +28,7 @@ class ACRObject:
 
         # Create empty masks to fill later where required
         self.masks = [None] * len(self.images)
+        self.slice_thickness_idx = 0
 
         # Store the pixel spacing value from the first image (expected to be the same for all)
         if "PixelSpacing" in self.dcms[0]:
@@ -37,8 +38,13 @@ class ACRObject:
                 if elem.tag == (0x28, 0x30):
                     self.pixel_spacing = elem.value
 
-        # Check slice order of images and reverse if necessary. Mask of slice thickness slice (slice 0) is also stored.
-        self.masks[0] = self.slice_order_checks()
+        # Check slice order of images and reverse if necessary so the slice-thickness
+        # slice is always normalised to index 0 for downstream tasks.
+        # IMPORTANT: do not reverse the main image stack here. Reordering is only used
+        # when selecting the slice-thickness slice for that task; all other tasks should
+        # continue to work on the original ACR stack ordering.
+        self.slice_thickness_idx, slice_thickness_mask = self.slice_order_checks()
+        self.masks[self.slice_thickness_idx] = slice_thickness_mask
 
         # take masks of slices 4-6 for uniformity checks
         self.unif_test_idxs = [4, 5, 6]
@@ -128,61 +134,46 @@ class ACRObject:
 
         return img_stack, dicom_stack
 
-    def slice_order_checks(self) -> SliceMask:
+    def slice_order_checks(self) -> tuple[int, SliceMask]:
         """
-        Perform orientation checks on a set of images to determine if slice order inversion is required.
+        Detect the slice-thickness slice in the current stack without modifying the stack order.
 
-        Description
-        -----------
-        This function analyzes the given set of images and their associated DICOM objects to determine if any
-        adjustments are needed to restore the correct slice order. Checks are made based on detected contours
-        from mask of uniformity slice (slice 5). Mask of slice 5 is returned for later use.
-
-        Returns
-        -------
-        mask: SliceMask
-            The mask of slice 5 (the uniformity slice).
+        The ACR slice-thickness slice may be the first or the last image in the stack.
+        This helper is only used for selecting the appropriate slice in the thickness task,
+        not for reordering the main DICOM stack used by other ACR tasks.
         """
 
-        try:
-            mask_0 = self.get_mask_slice_0()
-        except:
+        candidate_indices = [0, len(self.images) - 1]
+        seen = set()
+
+        for idx in candidate_indices:
+            if idx < 0 or idx >= len(self.images) or idx in seen:
+                continue
+            seen.add(idx)
             try:
-                self.images.reverse()
-                self.dcms.reverse()
-                mask_0 = self.get_mask_slice_0()
-            except:
-                raise ValueError(
-                    "First or last slice not detected as slice thickness slice.\n Please check that you selected the correct subdirectories and that the images look as expected."
-                )
+                mask = self.get_mask_for_slice(idx)
+                return idx, mask
+            except Exception:
+                pass
 
-        return mask_0
+        raise ValueError(
+            "First or last slice not detected as slice thickness slice.\n Please check that you selected the correct subdirectories and that the images look as expected."
+        )
 
-    def get_mask_slice_0(self) -> SliceMask:
-        """
-        Gets a mask of slice 0.
+    def get_mask_for_slice(self, slice_idx: int) -> SliceMask:
+        """Get the mask for a specific slice index without changing the image stack."""
+        image = self.images[slice_idx]
 
-        Returns
-        -------
-        mask: SliceMask
-            Mask of slice 0.
-
-        """
-
-        # get first image in stack
-        image_0 = self.images[0]
-
-        # intialise contour validation object so as to determine contour validation functions
-        contour_validation = ContourValidation(image_0)
-
-        # create slice mask, searching for both phantom edge and slice thickness insert
-        # as both should be present in first slice
-        mask = SliceMask(
-            image_0,
+        contour_validation = ContourValidation(image)
+        return SliceMask(
+            image,
             contour_validation.phantom_edge_scorer,
             contour_validation.slice_thickness_insert_scorer,
         )
-        return mask
+
+    def get_mask_slice_0(self) -> SliceMask:
+        """Backward-compatible wrapper keeping the original first-slice API."""
+        return self.get_mask_for_slice(0)
 
     def find_most_uniform_slice(self) -> int:
         """Finds the index of the most uniform slice in the ACR

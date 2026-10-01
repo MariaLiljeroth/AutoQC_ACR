@@ -15,7 +15,7 @@ import pydicom
 import csv
 from collections import defaultdict
 from typing import Any, List
-
+import numpy as np
 
 
 def nested_dict() -> defaultdict:
@@ -79,8 +79,20 @@ def dump_nested_dict_to_csv(d: dict, out_subdir: Path, filename: str = "results_
         else:
             rows.append(prefix + [value])
 
+    def normalize_cell(value: Any) -> Any:
+        if value is None:
+            return ""
+        if isinstance(value, (float, np.floating)):
+            return "" if np.isnan(value) else value
+        if isinstance(value, (np.integer, int)):
+            return int(value)
+        if isinstance(value, str):
+            return "" if value.strip().lower() in {"", "nan", "n/a", "none"} else value
+        return value
+
     rows: List[List[Any]] = []
     flatten([], d, rows)
+    rows = [[normalize_cell(cell) for cell in row] for row in rows]
 
     max_depth = max(len(row) for row in rows)
     header = [f"Level_{i+1}" for i in range(max_depth - 1)] + ["Value"]
@@ -151,3 +163,57 @@ def quick_check_dicom(file: Path) -> bool:
     # If file not DICOM, return False
     except:
         return False
+
+
+def coerce_numeric(value: Any, default: Any = np.nan) -> Any:
+    """Cast common scalar inputs to float while preserving missing values as NaN."""
+    if value is None:
+        return default
+
+    if isinstance(value, dict):
+        for key in ("measured", "value", "result"):
+            if key in value:
+                return coerce_numeric(value[key], default)
+        return default
+
+    if isinstance(value, (list, tuple)):
+        if len(value) == 1:
+            return coerce_numeric(value[0], default)
+        return default
+
+    if isinstance(value, (str, bytes)):
+        cleaned = str(value).strip()
+        if cleaned in {"", "N/A", "n/a", "nan", "NaN", "None", "none"}:
+            return default
+        try:
+            numeric = float(cleaned)
+            return default if np.isnan(numeric) else numeric
+        except ValueError:
+            return default
+
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        numeric = float(value)
+        return default if np.isnan(numeric) else numeric
+
+    try:
+        numeric = float(value)
+        return default if np.isnan(numeric) else numeric
+    except (TypeError, ValueError):
+        return default
+
+
+def sanitize_missing_values(value: Any) -> Any:
+    """Recursively convert NumPy/Python missing values to blank strings for CSV/output use."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return {k: sanitize_missing_values(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_missing_values(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return [sanitize_missing_values(v) for v in value.tolist()]
+    if isinstance(value, (float, np.floating)):
+        return "" if np.isnan(value) else float(value)
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    return value
