@@ -278,22 +278,38 @@ class LogConstructor:
             return uniformity
 
         elif task == "Spatial Resolution":
-            # get mtf50 values for specific coil
-            mtf50 = [
+            # Prefer the explicit effective spatial resolution in mm. If legacy
+            # data still contains only raw MTF50, convert once for compatibility.
+            spatial_res = [
+                chained_get(
+                    self.results,
+                    task,
+                    coil,
+                    orientation,
+                    "measurement",
+                    "spatial_resolution_mm",
+                    default=inspect.signature(chained_get).parameters["default"].default,
+                )
+                for orientation in EXPECTED_ORIENTATIONS
+            ]
+
+            legacy_mtf50 = [
                 chained_get(
                     self.results, task, coil, orientation, "measurement", "mtf50"
                 )
                 for orientation in EXPECTED_ORIENTATIONS
             ]
-
-            # calculate spatial resolution from mtf50
             spatial_res = [
                 (
-                    1 / mtf
-                    if isinstance(mtf, (int, float)) and mtf not in (0, 0.0)
-                    else inspect.signature(chained_get).parameters["default"].default
+                    value
+                    if isinstance(value, (int, float)) and not np.isnan(value)
+                    else (
+                        1 / mtf
+                        if isinstance(mtf, (int, float)) and mtf not in (0, 0.0)
+                        else inspect.signature(chained_get).parameters["default"].default
+                    )
                 )
-                for mtf in mtf50
+                for value, mtf in zip(spatial_res, legacy_mtf50)
             ]
             spatial_res = self.make_row("Spatial Resolution", [_clean_numeric(x) for x in spatial_res])
             return spatial_res
