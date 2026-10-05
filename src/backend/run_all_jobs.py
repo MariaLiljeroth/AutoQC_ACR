@@ -276,7 +276,16 @@ def format_results(results: dict) -> dict:
         subdict_with_value = dict(subdict)
         subdict_with_value["value"] = extract_scalar(subdict, task_key)
 
-        # store in nested dict
+        # store in nested dict, protecting against overwriting valid results with NaN/errors
+        if coil_key in formatted_results[task_key] and orientation_key in formatted_results[task_key][coil_key]:
+            existing = formatted_results[task_key][coil_key][orientation_key]
+            existing_val = existing.get("value")
+            new_val = subdict_with_value.get("value")
+            is_existing_valid = existing_val is not None and not (isinstance(existing_val, float) and np.isnan(existing_val))
+            is_new_valid = new_val is not None and not (isinstance(new_val, float) and np.isnan(new_val))
+            if is_existing_valid and not is_new_valid:
+                continue
+
         formatted_results[task_key][coil_key][orientation_key] = subdict_with_value
 
     return defaultdict_to_dict(formatted_results)
