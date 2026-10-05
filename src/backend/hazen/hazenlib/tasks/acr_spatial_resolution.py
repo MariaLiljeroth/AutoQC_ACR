@@ -19,6 +19,8 @@ yassine.azma@rmh.nhs.uk
 """
 
 import os
+import sys
+import traceback
 
 import numpy as np
 import cv2
@@ -67,9 +69,29 @@ class ACRSpatialResolution(HazenTask):
                 visualisation.
         """
         # Identify relevant slice, dcm and mask
-        target_slice = 0
-        mtf_dcm = self.ACR_obj.dcms[target_slice]
+        # According to ACR guidance, spatial resolution should be calculated from the first slice.
+        # However, if the slice thickness slice is at index 0, use a different slice
+        # since the slice thickness insert will interfere with the MTF calculation.
+        # Spatial resolution must be measured on the slice containing the slice-thickness
+        # insert. The insert provides the edge used for the MTF edge-spread calculation.
+        # Using the next slice removes the required contour and makes the later ROI and
+        # MTF steps collapse to NaN.
+        target_slice = getattr(self.ACR_obj, "slice_thickness_idx", 0)
         mask = self.ACR_obj.masks[target_slice]
+        if mask is None or not np.any(mask):
+            mask = self.ACR_obj.get_mask_for_slice(target_slice)
+            self.ACR_obj.masks[target_slice] = mask
+
+        if mask is None or not np.any(mask):
+            raise ValueError(
+                f"Spatial-resolution mask for slice {target_slice} is empty or not initialised."
+            )
+
+        mtf_dcm = self.ACR_obj.dcms[target_slice]
+        if mask is None or not np.any(mask):
+            raise ValueError(
+                f"Spatial-resolution mask for slice {target_slice} is empty or not initialised."
+            )
 
         # Initialise results dictionary and add image description
         results = self.init_result_dict()
@@ -78,11 +100,19 @@ class ACRSpatialResolution(HazenTask):
         try:
             # get mtf of chosen dcm and mask
             mtf50 = self.get_mtf50(mtf_dcm, mask)
+            print(f"DEBUG: MTF50 returned = {mtf50} (type: {type(mtf50).__name__})")
 
             # Keep the raw MTF50 frequency (cycles/mm) for downstream calculations.
             # Convert once to effective spatial resolution in mm for human-readable
             # reporting, but do not overwrite the raw value that the log builder expects.
-            spatial_resolution = 1 / mtf50 if mtf50 not in (0, 0.0) else np.nan
+            # Only set to NaN if mtf50 is actually 0, NaN, or negative
+            if mtf50 and mtf50 > 0 and not np.isnan(mtf50):
+                spatial_resolution = 1 / (2 * mtf50)
+            else:
+                spatial_resolution = np.nan
+                
+            print(f"DEBUG: mtf50={mtf50}, spatial_resolution={spatial_resolution}")
+            
             results["measurement"] = {
                 "mtf50": mtf50,
                 "spatial_resolution_mm": spatial_resolution,
@@ -93,10 +123,16 @@ class ACRSpatialResolution(HazenTask):
 
         except Exception as e:
             # alert the user that spatial resolution could not be calculated and why
+            import traceback
             print(
                 f"{self.img_desc(mtf_dcm)}: Could not calculate spatial resolution because of : {e}"
             )
-            # traceback.print_exc(file=sys.stdout)
+            traceback.print_exc(file=sys.stdout)
+            # Ensure measurement dict is populated with NaN values even on error
+            results["measurement"] = {
+                "mtf50": np.nan,
+                "spatial_resolution_mm": np.nan,
+            }
 
         # only return reports if requested
         if self.report:
@@ -156,10 +192,29 @@ class ACRSpatialResolution(HazenTask):
 
             Returns:
                 float: output x corresponding to input y.
+                
+            Raises:
+                ValueError: If the y_input value is not found in the data range.
             """
 
-            # find index where y array becomes greater than input y-value
-            crossing_index = np.where(y < y_input)[0][0]
+            # find index where y array becomes less than input y-value
+            crossing_indices = np.where(y < y_input)[0]
+            
+            if len(crossing_indices) == 0:
+                # y_input is greater than all y values - use closest approach
+                print(f"Warning: y_input={y_input} is greater than all y values. Max y={np.max(y)}")
+                # Find the closest point to y_input instead of failing
+                closest_idx = np.argmin(np.abs(np.array(y) - y_input))
+                print(f"Using closest value: y[{closest_idx}]={y[closest_idx]}, x[{closest_idx}]={x[closest_idx]}")
+                return x[closest_idx]
+            
+            crossing_index = crossing_indices[0]
+            
+            if crossing_index == 0:
+                # y_input is greater than the first y value but we need two points
+                print(f"Warning: Crossing index is 0, cannot interpolate backwards. y_input={y_input}, y[0]={y[0]}")
+                # Use the first point
+                return x[0]
 
             # get the x and y-values either side of the crossing index
             x1, x2 = x[crossing_index - 1], x[crossing_index]
@@ -171,8 +226,32 @@ class ACRSpatialResolution(HazenTask):
             return x_output
 
         # get mtf50 and mtf5 for reporting
-        mtf50 = simple_interpolate(0.5, self.mtf_fitted[1], self.mtf_fitted[0])
-        mtf05 = simple_interpolate(0.005, self.mtf_fitted[1], self.mtf_fitted[0])
+        print(f"DEBUG: MTF fitted shape: {np.array(self.mtf_fitted).shape}")
+        print(f"DEBUG: MTF fitted y-range: [{np.min(self.mtf_fitted[1]):.4f}, {np.max(self.mtf_fitted[1]):.4f}]")
+        
+        try:
+            mtf50 = simple_interpolate(0.5, self.mtf_fitted[1], self.mtf_fitted[0])
+            print(f"MTF50 calculated: {mtf50} (type: {type(mtf50).__name__})")
+            
+            # Validate that we got a reasonable value
+            if mtf50 is None or (isinstance(mtf50, (float, np.floating)) and np.isnan(mtf50)):
+                print(f"WARNING: MTF50 is None or NaN, trying fallback")
+                mtf50 = 0.0
+            elif mtf50 <= 0:
+                print(f"WARNING: MTF50 is non-positive ({mtf50}), using 0.0")
+                mtf50 = 0.0
+                
+        except (ValueError, IndexError, TypeError) as e:
+            print(f"Error calculating MTF50: {e}")
+            print(f"MTF fitted y-range: min={np.min(self.mtf_fitted[1])}, max={np.max(self.mtf_fitted[1])}")
+            mtf50 = 0.0
+            print(f"DEBUG: MTF50 set to 0.0 due to error")
+        
+        try:
+            mtf05 = simple_interpolate(0.005, self.mtf_fitted[1], self.mtf_fitted[0])
+        except (ValueError, IndexError) as e:
+            print(f"Error calculating MTF05: {e}")
+            mtf05 = np.nan  # Use NaN as fallback for plotting
 
         # report images if requested
         if self.report:
@@ -232,7 +311,9 @@ class ACRSpatialResolution(HazenTask):
             axes[3].plot(self.mtf_fitted[0], self.mtf_fitted[1], label="MTF fitted")
             axes[3].set_xlabel("Spatial frequency (mm^-1)")
             axes[3].set_ylabel("MTF")
-            axes[3].set_xlim(0, mtf05)
+            # Only set xlim if mtf05 is valid
+            if np.isfinite(mtf05):
+                axes[3].set_xlim(0, mtf05)
             axes[3].legend()
 
             # Work out where to save the plot.
@@ -272,10 +353,25 @@ class ACRSpatialResolution(HazenTask):
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         contour_validation = ContourValidation(mask)
 
-        insert_idx = np.argmax(
-            [contour_validation.slice_thickness_insert_scorer(c) for c in contours]
-        )
-        insert = contours[insert_idx]
+        if len(contours) == 0:
+            raise ValueError("No contours found in spatial-resolution mask; cannot locate slice-thickness insert.")
+
+        scored_contours = [
+            (float(contour_validation.slice_thickness_insert_scorer(c)), c)
+            for c in contours
+        ]
+        valid_contours = [
+            (score, c)
+            for score, c in scored_contours
+            if np.isfinite(score) and score > 0.0
+        ]
+
+        if not valid_contours:
+            raise ValueError(
+                "No positive slice-thickness insert contour found for spatial-resolution ROI selection."
+            )
+
+        insert = max(valid_contours, key=lambda item: item[0])[1]
 
         # rotate image and mask so slice thickness insert should be self.TARGET_THETA_INSERT off axis
         image_rotated = self.rotate_rel_to_insert(self.image_orig, insert)
@@ -285,9 +381,17 @@ class ACRSpatialResolution(HazenTask):
         contours_rotated, _ = cv2.findContours(
             mask_rotated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
         )
-        insert_rotated = sorted(contours_rotated, key=lambda c: cv2.arcLength(c, True))(
-            -2
-        )
+        if len(contours_rotated) == 0:
+            insert_rotated = insert
+        else:
+            contours_rotated_sorted = sorted(
+                contours_rotated, key=lambda c: cv2.arcLength(c, True)
+            )
+            insert_rotated = (
+                contours_rotated_sorted[-2]
+                if len(contours_rotated_sorted) >= 2
+                else contours_rotated_sorted[-1]
+            )
 
         # define the centre for the ROI that will be used for spatial resolution calcs.
         roi_centre = self.define_ROI_centre(insert_rotated)
@@ -297,6 +401,15 @@ class ACRSpatialResolution(HazenTask):
         x2 = int(roi_centre[0] + self.SIZE_ROI // 2)
         y1 = int(roi_centre[1] - self.SIZE_ROI // 2)
         y2 = int(roi_centre[1] + self.SIZE_ROI // 2)
+
+        # clamp to image bounds to avoid invalid ROI slices.
+        y_max, x_max = image_rotated.shape[:2]
+        x1 = max(0, min(x1, x_max - 1))
+        x2 = max(0, min(x2, x_max))
+        y1 = max(0, min(y1, y_max - 1))
+        y2 = max(0, min(y2, y_max))
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("Computed ROI bounds are invalid for spatial-resolution measurement.")
 
         # extract ROI pixel array
         roi = image_rotated[y1:y2, x1:x2]
@@ -434,6 +547,9 @@ class ACRSpatialResolution(HazenTask):
 
         Returns:
             np.ndarray: Analytical fitted esf.
+            
+        Raises:
+            RuntimeError: If curve fitting fails.
         """
 
         # define function for analytical esf (see Delakis et al.)
@@ -441,13 +557,19 @@ class ACRSpatialResolution(HazenTask):
             return c_1 / np.pi * sici(alpha * np.pi * (x - m))[0] + c_1 / 2 + c_2
 
         # get best fit parameters by curve_fit with raw esf data
-        popt, _ = curve_fit(
-            esf_func,
-            self.esf[0],
-            self.esf[1],
-            p0=[np.ptp(self.esf[1]), np.min(self.esf[1]), 1, np.median(self.esf[0])],
-            maxfev=2500,
-        )
+        try:
+            popt, _ = curve_fit(
+                esf_func,
+                self.esf[0],
+                self.esf[1],
+                p0=[np.ptp(self.esf[1]), np.min(self.esf[1]), 1, np.median(self.esf[0])],
+                maxfev=2500,
+            )
+            print(f"ESF curve fit successful with parameters: {popt}")
+        except RuntimeError as e:
+            print(f"Error during ESF curve fitting: {e}")
+            print(f"ESF data - x range: [{self.esf[0][0]}, {self.esf[0][-1]}], y range: [{np.min(self.esf[1])}, {np.max(self.esf[1])}]")
+            raise
         
         # get equally-spaced x array across raw input x-range
         x_range = np.linspace(self.esf[0][0], self.esf[0][-1], 1000)

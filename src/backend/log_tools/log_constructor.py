@@ -23,18 +23,23 @@ from src.shared.queueing import get_queue, QueueTrigger
 def _clean_numeric(value):
     """Return a finite float or the default sentinel for missing values."""
     if value is None:
-        return inspect.signature(chained_get).parameters["default"].default
+        return "N/A"
+    # Handle NaN floats explicitly
+    if isinstance(value, (float, np.floating)):
+        if np.isnan(value) or np.isinf(value):
+            return "N/A"
+        return float(value)
     if isinstance(value, str):
         value = value.strip()
         if value in {"", "N/A", "nan", "NaN", "None", "none"}:
-            return inspect.signature(chained_get).parameters["default"].default
+            return "N/A"
     if isinstance(value, numbers.Real) and np.isfinite(value):
         return float(value)
     try:
         value = float(value)
-        return value if np.isfinite(value) else inspect.signature(chained_get).parameters["default"].default
+        return value if np.isfinite(value) else "N/A"
     except (TypeError, ValueError):
-        return inspect.signature(chained_get).parameters["default"].default
+        return "N/A"
 
 
 class LogConstructor:
@@ -302,11 +307,11 @@ class LogConstructor:
             spatial_res = [
                 (
                     value
-                    if isinstance(value, (int, float)) and not np.isnan(value)
+                    if isinstance(value, (int, float)) and np.isfinite(value)
                     else (
-                        1 / mtf
-                        if isinstance(mtf, (int, float)) and mtf not in (0, 0.0)
-                        else inspect.signature(chained_get).parameters["default"].default
+                        1 / (2 * mtf)
+                        if isinstance(mtf, (int, float)) and mtf not in (0, 0.0) and np.isfinite(mtf)
+                        else "N/A"
                     )
                 )
                 for value, mtf in zip(spatial_res, legacy_mtf50)

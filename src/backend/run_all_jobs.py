@@ -182,22 +182,46 @@ def extract_scalar(subdict: dict, task_key: str):
     """Extract the main scalar value for Hazen results.
     Handles both SNR by subtraction and SNR by smoothing.
     """
+    print(f"\n=== DEBUG extract_scalar ===")
+    print(f"Task: {task_key}, Subdict keys: {list(subdict.keys())}")
+    
     if task_key == "SNR":
         if "measurement" in subdict:
             meas = subdict["measurement"]
+            print(f"SNR measurement type: {type(meas)}, keys: {list(meas.keys()) if isinstance(meas, dict) else 'N/A'}")
             if isinstance(meas, dict):
                 if "snr by subtraction" in meas:
-                    return coerce_numeric(meas["snr by subtraction"].get("measured"))
+                    val = meas["snr by subtraction"].get("measured") if isinstance(meas["snr by subtraction"], dict) else meas["snr by subtraction"]
+                    print(f"Found snr by subtraction: {val}")
+                    return coerce_numeric(val)
                 if "snr by smoothing" in meas:
-                    return coerce_numeric(meas["snr by smoothing"].get("measured"))
+                    val = meas["snr by smoothing"].get("measured") if isinstance(meas["snr by smoothing"], dict) else meas["snr by smoothing"]
+                    print(f"Found snr by smoothing: {val}")
+                    return coerce_numeric(val)
+        return None
+
+    if task_key == "Spatial Resolution":
+        if "measurement" in subdict and isinstance(subdict["measurement"], dict):
+            meas = subdict["measurement"]
+            if "spatial_resolution_mm" in meas:
+                return coerce_numeric(meas["spatial_resolution_mm"])
+            if "mtf50" in meas:
+                val = coerce_numeric(meas["mtf50"])
+                if val and val > 0:
+                    # If legacy value was raw MTF50 frequency (< 0.8), convert with 1 / (2 * val)
+                    return val if val > 0.8 else 1 / (2 * val)
+                return np.nan
         return None
 
     if "measurement" in subdict:
         meas = subdict["measurement"]
+        print(f"Measurement type: {type(meas)}, content: {str(meas)[:200]}")
         if isinstance(meas, dict):
             if "value" in meas:
                 return coerce_numeric(meas["value"])
+            # For simple key-value pairs like {"slice width mm": 5.02}
             for key, value in meas.items():
+                print(f"  Checking key '{key}': {value} (type: {type(value).__name__})")
                 if isinstance(value, dict):
                     if "measured" in value:
                         return coerce_numeric(value["measured"])
@@ -205,6 +229,7 @@ def extract_scalar(subdict: dict, task_key: str):
                         return coerce_numeric(value["value"])
                 elif isinstance(value, (int, float, np.floating, np.integer, str)):
                     numeric = coerce_numeric(value)
+                    print(f"    Coerced to numeric: {numeric}")
                     if not np.isnan(numeric):
                         return numeric
     return None

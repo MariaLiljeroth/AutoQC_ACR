@@ -69,7 +69,7 @@ class ReportGenerator:
             ["measurement", "Diagonal distance SW"],
         ],
         "Uniformity": [["measurement", "integral uniformity %"]],
-        "Spatial Resolution": [["measurement", "mtf50"]],
+        "Spatial Resolution": [["measurement", "spatial_resolution_mm"]],
     }
 
     BULLET_KWARGS = {
@@ -172,10 +172,29 @@ class ReportGenerator:
 
         data = np.full((len(self.coils), len(EXPECTED_ORIENTATIONS), num_metrics), np.nan)
 
+        # DEBUG: Print the structure of results
+        print(f"\n=== DEBUG extract_task_matrix for {task} ===")
+        print(f"Results keys: {list(self.results.keys())}")
+        print(f"Task in results: {task in self.results}")
+        print(f"Expected coils: {self.coils}")
+        print(f"Expected orientations: {EXPECTED_ORIENTATIONS}")
+        
+        if task in self.results:
+            print(f"Task[{task}] keys: {list(self.results[task].keys())}")
+            for coil_name, coil_data in self.results[task].items():
+                print(f"  Coil '{coil_name}' keys: {list(coil_data.keys())}")
+                for orient_name, orient_data in coil_data.items():
+                    print(f"    Orientation '{orient_name}' keys: {list(orient_data.keys()) if isinstance(orient_data, dict) else type(orient_data)}")
+                    if isinstance(orient_data, dict) and "measurement" in orient_data:
+                        print(f"      Measurement keys: {list(orient_data['measurement'].keys()) if isinstance(orient_data['measurement'], dict) else type(orient_data['measurement'])}")
+
         for i, coil in enumerate(self.coils):
             coil_dict = self.results.get(task, {}).get(coil, {})
+            print(f"Loop coil[{i}]='{coil}': found in results={coil in self.results.get(task, {})}, coil_dict empty={not coil_dict}")
+            
             for j, orientation in enumerate(EXPECTED_ORIENTATIONS):
                 orient_dict = coil_dict.get(orientation, {})
+                print(f"  Loop orient[{j}]='{orientation}': found in coil_dict={orientation in coil_dict}, orient_dict empty={not orient_dict}")
 
                 if task == "SNR":
                     # Special-case: prefer subtraction if available, else smoothing
@@ -188,7 +207,9 @@ class ReportGenerator:
 
                     try:
                         data[i, j, 0] = float(val)
-                    except (TypeError, ValueError):
+                        print(f"    SNR set to {float(val)}")
+                    except (TypeError, ValueError) as e:
+                        print(f"    SNR failed to set: {e}, val={val}")
                         data[i, j, 0] = np.nan
 
                 else:
@@ -204,9 +225,21 @@ class ReportGenerator:
                         if isinstance(val, dict) and "measured" in val:
                             val = val["measured"]
 
+                        if task == "Spatial Resolution" and (val is None or (isinstance(val, float) and np.isnan(val))):
+                            legacy_mtf = orient_dict.get("measurement", {}).get("mtf50", None)
+                            if legacy_mtf is not None:
+                                try:
+                                    legacy_val = float(legacy_mtf)
+                                    if legacy_val > 0:
+                                        val = legacy_val if legacy_val > 0.8 else 1 / (2 * legacy_val)
+                                except (TypeError, ValueError):
+                                    pass
+
                         try:
                             data[i, j, k] = float(val)
-                        except (TypeError, ValueError):
+                            print(f"    {metric_keys} set to {float(val)}")
+                        except (TypeError, ValueError) as e:
+                            print(f"    {metric_keys} failed: {e}, val={val} (type: {type(val).__name__})")
                             data[i, j, k] = np.nan
         return data
         

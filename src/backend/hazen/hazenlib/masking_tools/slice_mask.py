@@ -162,7 +162,7 @@ class SliceMask(np.ndarray):
 
             # if all values in product score profile are zero, indicates that both contours
             # couldn't be found simultaneously at one threshold.
-            if all([x for x in product_scores if x == 0]):
+            if all(x == 0 for x in product_scores):
                 raise ValueError(
                     "A common threshold does not exist where both the phantom edge and additional contour are both visible."
                 )
@@ -573,38 +573,3 @@ class SliceMask(np.ndarray):
         )
 
         return obj
-
-    # @staticmethod
-    # def _filter_out_small_connec_comps(mask: np.ndarray) -> np.ndarray:
-    #     """Returns a filtered mask with small groups of connected pixels removed.
-    #     This helps to delicately remove artificial contours from the mask (e.g. from noise).
-
-    #     Args:
-    #         mask (np.ndarray): The mask to filter.
-
-    #     Returns:
-    #         np.ndarray: The filtered mask.
-    #     """
-
-    #     # gets total number of labels, mask with pixels labelled and additional stats
-    #     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-    #         mask, connectivity=8
-    #     )
-
-    #     # defines threshold number of pixels in group for group to be kept
-    #     min_connected_pixels = mask.size // 100
-
-    #     # get a blank mask of correct shape
-    #     mask_filtered = np.zeros_like(mask)
-
-    #     # operate on each group at once
-    #     for label in range(1, num_labels):
-
-    #         # get area associated with each group
-    #         area = stats[label, cv2.CC_STAT_AREA]
-
-    #         # if group area above threshold, keep group, otherwise left as 0.
-    #         if area >= min_connected_pixels:
-    #             mask_filtered[labels == label] = 255
-
-    #     return mask_filtered
